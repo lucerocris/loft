@@ -48,11 +48,6 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .btn.quiet { color: var(--t2); } .btn.quiet:hover { background: var(--raised); color: var(--t1); }
 .btn[disabled] { opacity: .4; cursor: not-allowed; }
 .top .btn { margin-left: auto; }
-.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 0 12px 6px; }
-.filters .gear { margin-left: auto; width: 28px; height: 28px; color: var(--t3); }
-.filters button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 5px 10px; border-radius: 99px; cursor: pointer; font-size: 12px; }
-.filters button:hover { color: var(--t1); }
-.filters button[aria-pressed="true"] { background: var(--selected); color: var(--t1); }
 .list { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .sec { display: flex; align-items: center; gap: 6px; padding: 14px 12px 6px; font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--t3); }
 .sec.alert { color: var(--needs); }
@@ -232,12 +227,12 @@ kbd { font: 11px var(--mono); color: var(--t3); }
   .back { display: inline-grid !important; }
 }
 /* ---------- board view ---------- */
-.vsw { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); }
-.vsw button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 3px 10px; border-radius: var(--r-sm); cursor: pointer; font-weight: 500; }
+.vsw { display: inline-flex; flex: none; gap: 2px; height: 32px; padding: 3px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); }
+.vsw button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 0 10px; border-radius: var(--r-sm); cursor: pointer; font-weight: 500; }
 .vsw button:hover { color: var(--t1); }
 .vsw button[aria-pressed="true"] { background: var(--selected); color: var(--t1); }
 .vsw kbd { font-size: 10px; }
-.top .vsw { margin-left: 8px; }
+.top .vsw { margin-left: 4px; }
 .boardv { display: none; flex-direction: column; min-width: 0; min-height: 0; }
 .app.board { grid-template-columns: minmax(0, 1fr); }
 .app.board.open { grid-template-columns: minmax(0, 1fr) min(560px, 45vw); }
@@ -245,10 +240,11 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .app.board:not(.open) .pane { display: none; }
 .app.board .pane { border-left: 1px solid var(--border); background: var(--canvas); }
 .app.board .back { display: inline-grid !important; }
-.btop { display: flex; align-items: center; gap: 16px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--border); min-width: 0; }
-.btop .filters { padding: 0; }
-.btop .grp { flex-wrap: nowrap; flex: none; } .btop .glabel { display: none; }
-.btop .usage { border: 0; padding: 0; margin-left: auto; }
+.btop { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px 0 20px; border-bottom: 1px solid var(--border); min-width: 0; }
+.btop .brand, .btop .acts { flex: none; } .btop .grow { flex: 1; min-width: 0; }
+.btop .ctl { padding: 0 0 0 12px; border-left: 1px solid var(--border); flex: 0 1 auto; }
+.btop .acts { display: flex; align-items: center; gap: 4px; } .btop .acts .btn { margin-left: 8px; } .btop .acts .ibtn { color: var(--t3); }
+.btop .usage { border: 0; padding: 0 16px 0 0; border-right: 1px solid var(--border); flex-wrap: nowrap; white-space: nowrap; flex: none; }
 .cols { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px; padding: 16px; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .bcol { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: var(--r-lg); min-height: 0; min-width: 0; overflow-y: auto; scrollbar-width: none; }
 .bcol.drop { background: var(--surface); border-color: var(--border-strong); }
@@ -276,14 +272,15 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .bmore { border: 0; background: none; color: var(--t3); font-size: 12px; text-align: left; padding: 4px 6px; cursor: pointer; }
 .bmore:hover { color: var(--t1); }
 .bhint { padding: 0 24px 14px; font: 11px var(--mono); color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 1100px) { .btop .usage { display: none; } .btop .btn { margin-left: auto; } }
-.app.board.open .btop .usage { display: none; } .app.board.open .btop .btn { margin-left: auto; }
+@media (max-width: 1100px) { .btop .usage { display: none; } }
+.app.board.open .btop .usage { display: none; }
 .app.board.open .cols { grid-auto-columns: minmax(188px, 1fr); }
 @media (max-width: 820px) {
   .app.board.open { grid-template-columns: 1fr; }
   .app.board.open .boardv { display: none; }
-  .btop { flex-wrap: wrap; gap: 10px; padding: 10px 16px; }
-  .btop .filters { order: 3; width: 100%; }
+  .btop { flex-wrap: wrap; gap: 8px; height: auto; padding: 10px 16px; }
+  .btop .grow { display: none; } .btop .acts { margin-left: auto; }
+  .btop .ctl { order: 3; flex: 1 1 100%; padding: 0 0 2px; border-left: 0; }
   .cols { grid-auto-columns: 82vw; scroll-snap-type: x mandatory; padding: 12px 16px; }
   .bcol { scroll-snap-align: start; }
   .bcard { padding: 13px 14px; min-height: 44px; }
@@ -291,13 +288,9 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 }
 @media (prefers-reduced-motion: reduce) { .sd.live, .mic.rec { animation: none; } }
 /* ---------- group by, projects, organize ---------- */
-.grp { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px 16px; flex-wrap: wrap; }
-.glabel { font-size: 11px; font-weight: 500; color: var(--t3); letter-spacing: .02em; }
 .seg.sm { padding: 2px; border-radius: 8px; } .seg.sm button { padding: 3px 7px; font-size: 12px; font-weight: 500; }
 .seg button:hover { color: var(--t1); }
 .top .ibtn[data-settings] { margin-left: auto; color: var(--t3); } .top .ibtn[data-settings] + .ibtn[data-phone] { margin-left: 0; }
-.filters .n { font: 11px var(--mono); color: var(--t3); }
-.filters button.add { color: var(--t2); }
 .pdot { width: 6px; height: 6px; border-radius: 2px; flex: none; display: inline-block; }
 .sec .gl { color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .sec .gl i { font-style: normal; color: var(--t3); }
@@ -306,6 +299,26 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .menu .mlabel { padding: 6px 10px 4px; font-size: 11px; font-weight: 500; color: var(--t3); }
 .menu .pdot, .menu .ring { width: 8px; height: 8px; margin: 0 4px; } .menu .ring { border: 1.5px solid var(--t3); border-radius: 50%; }
 .menu .tick { margin-left: auto; }
+/* header controls: group-by and filter dropdowns (Figma "Header cleanup") */
+.ctl { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 12px 10px 20px; }
+.ctl:not(:has(.dd)) { display: none; }
+.ddslot { display: contents; }
+.dd { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-width: 0; max-width: 220px; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--t1); font-weight: 500; cursor: pointer; white-space: nowrap; }
+.dd:hover { border-color: var(--border-strong); background: var(--raised); }
+.dd[aria-expanded="true"] { border-color: var(--border-strong); background: var(--selected); }
+.dd .k { color: var(--t3); font-weight: 400; flex: none; }
+.dd .v { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dd .n { font: 11px var(--mono); color: var(--t3); flex: none; }
+.dd svg { width: 14px; height: 14px; flex: none; color: var(--t3); }
+.dd .dot { flex: none; }
+.dd.add { color: var(--t2); border-style: dashed; }
+.menu.ddm { min-width: 232px; max-width: min(320px, calc(100vw - 16px)); }
+.menu .ddm-v { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu .ddm-n { font: 11px var(--mono); color: var(--t3); }
+.menu button[aria-checked="true"] { color: var(--t1); }
+.menu .tick { width: 14px; height: 14px; flex: none; }
+.menu .mfoot { padding: 6px 10px 4px; border-top: 1px solid var(--border-strong); margin-top: 4px; font: 11px var(--mono); color: var(--t3); }
+@media (max-width: 820px) { .dd { max-width: none; flex: 0 1 auto; } }
 /* board swimlanes */
 .cols.laned { display: block; overflow: auto; padding: 0 16px 16px; }
 .lhead, .lrow { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 12px; }
@@ -410,15 +423,17 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
       <button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button>
       <button class="btn primary" id="newBtn" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button>
     </div>
-    <div class="grp" id="grp"></div>
-    <div class="filters" id="filters" role="group" aria-label="Filter"></div>
+    <div class="ctl"><div class="ddslot" id="grp"></div><div class="ddslot" id="filters"></div></div>
     <div class="list" id="list"></div>
     <div class="usage" id="usage"></div>
   </aside>
   <section class="boardv" id="boardv" aria-label="Board">
     <div class="btop"><div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#5B8DFF"/><circle cx="41.5" cy="38" r="7" fill="#46C07D"/></svg>loft</div>
-      <div class="vsw" data-vsw role="group" aria-label="View"></div><div class="grp" id="bgrp" style="padding:0"></div><div class="filters" id="bfilters" role="group" aria-label="Filter"></div>
-      <div class="usage" id="busage"></div><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu" style="color:var(--t3)"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div>
+      <div class="vsw" data-vsw role="group" aria-label="View"></div>
+      <div class="ctl"><div class="ddslot" id="bgrp"></div><div class="ddslot" id="bfilters"></div></div>
+      <span class="grow"></span>
+      <div class="usage" id="busage"></div>
+      <div class="acts"><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div></div>
     <div class="cols" id="cols"></div>
     <div class="bhint">j k move · h l column · Enter open · s start a todo · g group by · drag a todo to Working to start it · b inbox · n new</div>
   </section>
@@ -506,8 +521,11 @@ const visible = () => { const g = gb();
   return S.cards.filter(c => !multiAcc() || !accById(acct) || c.account === acct); };
 function setGroup(g) { groupBy = g; store.set("loft.groupBy", g); render(); }
 function cycleGroup() { const o = groupOpts().map(([k]) => k); setGroup(o[(o.indexOf(gb()) + 1) % o.length]); toast("Group by " + gb()); }
-const groupHTML = () => `<span class="glabel">Group by</span><div class="seg sm" role="group" aria-label="Group by">${groupOpts().map(([k, l]) =>
-  `<button data-group="${k}" aria-pressed="${gb() === k}" title="Group by ${l.toLowerCase()} (G cycles)">${l}</button>`).join("")}</div>`;
+const SVG = { chev: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`,
+  rows: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18"/><path d="M3 12h18"/><path d="M3 19h18"/></svg>`,
+  check: `<svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>` };
+const groupLabel = () => (GROUPS.find(([k]) => k === gb()) || [, "Status"])[1];
+const groupHTML = () => `<button class="dd" data-dd="group" aria-haspopup="menu" aria-expanded="false" title="Group by (G cycles)">${SVG.rows}<span class="k">Group</span><span class="v">${groupLabel()}</span>${SVG.chev}</button>`;
 const pdotH = p => `<span class="pdot" style="background:${p.hex}" title="${esc(p.name)}"></span>`;
 const statusRank = { needs: 0, running: 1, todo: 2, done: 3 };
 const byStatus = l => l.slice().sort((a, b) => (b.pinned - a.pinned) || (statusRank[a.col] - statusRank[b.col]) || (Date.parse(b.updated || 0) - Date.parse(a.updated || 0)));
@@ -564,18 +582,34 @@ function renderInbox() {
   $("#list").innerHTML = h;
   $("#usage").innerHTML = usageHTML();
 }
-function filtersHTML() {
+function filterOpts() {   // {dim, cur, all, vals: [{key, label, hex, title, n}]} for the active grouping, or null when there is nothing to choose
   const g = gb();
   if (LANED.includes(g)) {
-    const cur = curFilter(g), n = k => S.cards.filter(c => keyOf(c, g) === k).length;
-    const vals = dimValues(g, S.cards).filter(d => n(d.key));
-    const all = `<button data-fkey="*" aria-pressed="${cur === undefined}">All <span class="n">${S.cards.length}</span></button>`;
-    const add = g === "project" && !(S.projects || []).length ? `<button class="add" data-go="projects"><i data-lucide="plus" class="ic"></i>Create project</button>` : "";
-    return all + vals.map(d => `<button data-fkey="${esc(d.key)}" aria-pressed="${cur === d.key}" title="${esc(d.title)}"><span class="dot" style="background:${d.hex}"></span>${esc(d.label)} <span class="n">${n(d.key)}</span></button>`).join("") + add;
+    const n = k => S.cards.filter(c => keyOf(c, g) === k).length;
+    const cur = curFilter(g), vals = dimValues(g, S.cards).map(d => ({ ...d, n: n(d.key) })).filter(d => d.n || d.key === cur);
+    return { dim: g, cur, all: S.cards.length, vals };
   }
-  const cur = accById(acct) ? acct : "", accs = S.accounts || [];
-  return accs.length > 1 ? [["", "All"], ...accs.map(a => [a.id, a.label])].map(([k, l]) =>
-    `<button data-acct="${esc(k)}" aria-pressed="${cur === k}"${k ? ` title="${esc(accTitle(accById(k)))}"` : ""}>${k ? dotH(accById(k)) : ""}${esc(l)}</button>`).join("") : "";
+  const accs = S.accounts || []; if (accs.length < 2) return null;
+  return { dim: "account-filter", cur: accById(acct) ? acct : undefined, all: S.cards.length,
+    vals: accs.map(a => ({ key: a.id, label: a.label, hex: a.hex, title: accTitle(a), n: S.cards.filter(c => c.account === a.id).length })) };
+}
+function filtersHTML() {
+  if (gb() === "project" && !(S.projects || []).length) return `<button class="dd add" data-go="projects" title="Make a project to group agents by"><span class="v">Create project</span></button>`;
+  const o = filterOpts(); if (!o || o.vals.length < 2) return "";
+  const d = o.vals.find(v => v.key === o.cur);
+  return `<button class="dd" data-dd="filter" aria-haspopup="menu" aria-expanded="false" title="${d ? "Showing " + esc(d.title) : "Showing everything"}">${d ? `<span class="dot" style="background:${d.hex}"></span><span class="v">${esc(d.label)}</span><span class="n">${d.n}</span>` : `<span class="v">All</span><span class="n">${o.all}</span>`}${SVG.chev}</button>`;
+}
+function openDD(btn, kind, kb) {
+  const m = $("#menu"), item = (attrs, on, inner) => `<button role="menuitemradio" aria-checked="${on}" ${attrs}>${inner}${on ? SVG.check : ""}</button>`;
+  if (kind === "group") m.innerHTML = `<div class="mlabel">Group by</div>${groupOpts().map(([k, l]) => item(`data-group="${k}"`, gb() === k, `<span class="ddm-v">${l}</span>`)).join("")}<div class="mfoot">g cycles</div>`;
+  else { const o = filterOpts(); if (!o) return; const attr = k => o.dim === "account-filter" ? `data-acct="${esc(k)}"` : `data-fkey="${esc(k)}"`;
+    m.innerHTML = `<div class="mlabel">Show</div>${item(attr(o.dim === "account-filter" ? "" : "*"), o.cur === undefined, `<span class="dot" style="background:transparent"></span><span class="ddm-v">All</span><span class="ddm-n">${o.all}</span>`)}${o.vals.map(d =>
+      item(`${attr(d.key)} title="${esc(d.title)}"`, o.cur === d.key, `<span class="dot" style="background:${d.hex}"></span><span class="ddm-v">${esc(d.label)}</span><span class="ddm-n">${d.n}</span>`)).join("")}`; }
+  m.setAttribute("role", "menu"); m.className = "menu ddm"; m.dataset.for = kind; m.hidden = false;
+  const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = "auto";
+  m.style.left = Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8)) + "px";
+  btn.setAttribute("aria-expanded", "true");
+  if (kb) (m.querySelector('[aria-checked="true"]') || m.querySelector("button"))?.focus();
 }
 function usageHTML() {
   const u = S.usage || {}, num = x => x != null && x !== "" && x !== "—" && !isNaN(+x) ? +x : null;
@@ -952,9 +986,9 @@ function openMenu(btn) {
     ${!todo ? `<button data-do="open"><i data-lucide="app-window" class="ic"></i>Open in terminal</button>` : ""}
     ${running ? `<button data-do="stop"><i data-lucide="square" class="ic"></i>Stop</button>` : ""}
     <hr><button class="danger" data-do="archive" ${running ? "disabled title='Stop it first'" : ""}><i data-lucide="${todo ? "trash-2" : "archive"}" class="ic"></i><span>${todo ? "Delete" : "Archive"}</span></button>`;
-  const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = (innerWidth - r.right) + "px"; m.hidden = false; icons();
+  const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = (innerWidth - r.right) + "px"; m.style.left = "auto"; m.className = "menu"; m.dataset.for = "card"; m.hidden = false; icons();
 }
-const closeMenu = () => { $("#menu").hidden = true; };
+const closeMenu = () => { $("#menu").hidden = true; document.querySelectorAll('[data-dd][aria-expanded="true"]').forEach(b => b.setAttribute("aria-expanded", "false")); };
 function projMenuHTML(c) {
   const ps = S.projects || [];
   if (!ps.length) return `<button data-go="projects"><i data-lucide="folder-plus" class="ic"></i>Create a project…</button><hr>`;
@@ -966,7 +1000,7 @@ function openSettings(btn) {
   m.innerHTML = `<button data-go="accounts"><i data-lucide="users" class="ic"></i>Accounts<kbd style="margin-left:auto">,</kbd></button>
     <button data-go="projects"><i data-lucide="layers" class="ic"></i>Projects<kbd style="margin-left:auto">p</kbd></button>
     <button data-go="organize"><i data-lucide="layout-list" class="ic"></i>How to organize…</button>`;
-  const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = Math.max(8, innerWidth - r.right) + "px"; m.hidden = false; m.dataset.for = "settings"; icons();
+  const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = Math.max(8, innerWidth - r.right) + "px"; m.style.left = "auto"; m.className = "menu"; m.hidden = false; m.dataset.for = "settings"; icons();
 }
 function go(where) { closeMenu(); if (where === "accounts") AC = null; if (where === "organize") { orgPick = null; orgFolders = null; } $("#pane").dataset.key = ""; setSel(where); }
 
@@ -1137,6 +1171,12 @@ async function popClick(t) {
   if (t.hasAttribute("data-popgo")) return doSwitch(c.id, POP.pick, POP.when);
 }
 $("#accpop").addEventListener("click", e => { e.stopPropagation(); const t = e.target.closest("button"); if (t) popClick(t); });
+$("#menu").addEventListener("keydown", e => {   // arrow keys walk the open menu; Escape returns focus to the dropdown that opened it
+  const b = [...$("#menu").querySelectorAll("button:not([disabled])")], i = b.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "j" || e.key === "k") { e.preventDefault(); e.stopPropagation(); const d = e.key === "ArrowDown" || e.key === "j" ? 1 : -1; b[(i + d + b.length) % b.length]?.focus(); }
+  else if (e.key === "Escape" || e.key === "Tab") { const f = $("#menu").dataset.for, src = document.querySelector(`.app:not(.board) .inbox [data-dd="${f}"], .app.board .boardv [data-dd="${f}"]`); if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); } closeMenu(); if (e.key === "Escape") src?.focus(); }
+  else if (e.key !== "Enter" && e.key !== " ") e.stopPropagation();
+});
 $("#accpop").addEventListener("keydown", e => {
   if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); return closePop(true); }
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); const b = [...$("#accpop").querySelectorAll("button")]; const i = b.indexOf(document.activeElement); b[(i + (e.key === "ArrowDown" ? 1 : -1) + b.length) % b.length]?.focus(); }
@@ -1204,7 +1244,7 @@ $("#phoneDlg").addEventListener("close", () => { pairing = null; });
 /* ---------- events ---------- */
 document.addEventListener("click", async e => {
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
-  if (!e.target.closest("#menu") && !e.target.closest("[data-menu]") && !e.target.closest("[data-settings]")) closeMenu();
+  if (!e.target.closest("#menu") && !e.target.closest("[data-menu]") && !e.target.closest("[data-settings]") && !e.target.closest("[data-dd]")) closeMenu();
   if (POP && !e.target.closest("[data-accpop], [data-billsto]")) closePop();
   const t = e.target.closest("button, .item, .bcard"); if (!t || t.closest("#projDlg, #phoneDlg")) return;
   if (t.dataset.pcancel) { e.stopPropagation(); const r = await act(t.dataset.pcancel, "account", { cancel: true }, true); if (r) toast(r.message); try { apply(await api("/api/state")); } catch {} return; }
@@ -1213,8 +1253,9 @@ document.addEventListener("click", async e => {
   if (t.matches(".item, .bcard")) return setSel(t.dataset.id);
   if (t.hasAttribute("data-settings")) return $("#menu").hidden || $("#menu").dataset.for !== "settings" ? openSettings(t) : closeMenu();
   if (t.dataset.go) return go(t.dataset.go);
-  if (t.dataset.group) return setGroup(t.dataset.group);
-  if (t.dataset.fkey !== undefined) { const g = gb(); if (t.dataset.fkey === "*") delete fsel[g]; else fsel[g] = t.dataset.fkey; store.set("loft.fsel", JSON.stringify(fsel)); return render(); }
+  if (t.dataset.dd) { const m = $("#menu"); return !m.hidden && m.dataset.for === t.dataset.dd ? closeMenu() : openDD(t, t.dataset.dd, e.detail === 0); }
+  if (t.dataset.group) { closeMenu(); return setGroup(t.dataset.group); }
+  if (t.dataset.fkey !== undefined) { closeMenu(); const g = gb(); if (t.dataset.fkey === "*") delete fsel[g]; else fsel[g] = t.dataset.fkey; store.set("loft.fsel", JSON.stringify(fsel)); return render(); }
   if (t.dataset.lane) { const k = t.dataset.lane; lanesShut.has(k) ? lanesShut.delete(k) : lanesShut.add(k); store.set("loft.lanes", JSON.stringify([...lanesShut])); return renderBoard(); }
   if (t.dataset.proj !== undefined) { closeMenu(); const r = await act(sel, "project", { project: t.dataset.proj || null }); if (r) { S = await api("/api/state"); $("#pane").dataset.key = ""; render(); } return; }
   if (t.hasAttribute("data-pnew")) return openProject(null);
@@ -1226,7 +1267,7 @@ document.addEventListener("click", async e => {
   if (t.closest(".accts") && !t.hasAttribute("data-back")) return accountsClick(t);
   if (t.dataset.view) return setView(t.dataset.view);
   if (t.hasAttribute("data-phone")) return phoneOpen();
-  if (t.dataset.acct !== undefined) { acct = t.dataset.acct; store.set("loft.acct", acct); return render(); }
+  if (t.dataset.acct !== undefined) { closeMenu(); acct = t.dataset.acct; store.set("loft.acct", acct); return render(); }
   if (["newBtn", "newBtn2", "newBtn3", "newBtn4"].includes(t.id)) return setSel("new");
   if (t.hasAttribute("data-back")) return setSel(null);
   if (t.hasAttribute("data-toggle-done")) { showDone = !showDone; renderInbox(); return renderBoard(); }
@@ -1235,7 +1276,7 @@ document.addEventListener("click", async e => {
   if (t.hasAttribute("data-send")) return sendReply();
   if (t.dataset.mic) return toggleVoice(t.dataset.mic);
   if (t.hasAttribute("data-reconnect")) { wsFor = null; ws = null; return mountTerm(sel); }
-  if (t.hasAttribute("data-menu")) return $("#menu").hidden ? openMenu(t) : closeMenu();
+  if (t.hasAttribute("data-menu")) return $("#menu").hidden || $("#menu").dataset.for !== "card" ? openMenu(t) : closeMenu();
   if (t.dataset.newacct) { drafts.dir = $("#ndir")?.value; drafts.new = $("#nprompt").value; newAcct = t.dataset.newacct; store.set("loft.newAcct", newAcct); $("#pane").dataset.key = ""; return renderPane(); }
   if (t.id === "nStart") return submitNew(true);
   if (t.id === "nTodo") return submitNew(false);
