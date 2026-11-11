@@ -1136,7 +1136,18 @@ def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     srv.daemon_threads = True
     # --port 0 picks a free port; this line is the handshake the desktop app reads.
-    print(f"loft on http://127.0.0.1:{srv.server_address[1]}", flush=True)
+    port = srv.server_address[1]
+    # Private (0600) copy of this run's token: the desktop app reads it to confirm the server
+    # on the port is the user's own Loft before trusting it with the microphone.
+    try:
+        tf = paths.cache_dir() / f"server-{port}.token"
+        tf.parent.mkdir(parents=True, exist_ok=True)
+        tf.unlink(missing_ok=True)
+        with os.fdopen(os.open(tf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as fh:
+            fh.write(TOKEN)
+    except OSError as e:
+        print(f"couldn't write the token file: {e}", file=sys.stderr, flush=True)
+    print(f"loft on http://127.0.0.1:{port}", flush=True)
     if "--exit-with-stdin" in sys.argv:   # desktop app: exit when the parent goes away
         threading.Thread(target=lambda: (sys.stdin.read(), os._exit(0)), daemon=True).start()
     if DEV_LOOPBACK_DEVICES:

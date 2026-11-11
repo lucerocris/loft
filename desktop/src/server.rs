@@ -151,8 +151,31 @@ fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
-/// Something on the port that serves Loft's page (with a real token in it).
+/// The token the Loft server on `port` wrote to its private (0600) file, if any.
+fn token_file(port: u16) -> Option<String> {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .filter(|s| s.starts_with('/'))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"));
+    let f = base.join("loft").join(format!("server-{port}.token"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let m = f.metadata().ok()?;
+        let me = std::fs::metadata(std::env::var("HOME").ok()?).ok()?.uid();
+        // must be ours and private, or another user could plant a token
+        if m.uid() != me || m.permissions().mode() & 0o077 != 0 {
+            return None;
+        }
+    }
+    let t = std::fs::read_to_string(f).ok()?.trim().to_string();
+    (t.len() >= 32 && t.chars().all(|c| c.is_ascii_hexdigit())).then_some(t)
+}
+
+/// The server on the port is this user's Loft: its page carries the token from the private file.
 fn is_loft(port: u16) -> bool {
+    let Some(token) = token_file(port) else { return false };
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut s) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) else { return false };
     let _ = s.set_read_timeout(Some(Duration::from_secs(3)));
@@ -163,7 +186,7 @@ fn is_loft(port: u16) -> bool {
     let mut body = Vec::new();
     let _ = s.take(4_000_000).read_to_end(&mut body);
     let text = String::from_utf8_lossy(&body);
-    text.starts_with("HTTP/1.") && text.contains("const TOKEN = \"") && !text.contains("__CAGENTS_TOKEN__")
+    text.starts_with("HTTP/1.") && text.contains(&format!("const TOKEN = \"{token}\""))
 }
 
 /// The Loft files: $LOFT_REPO (a clone, for development) or the copy bundled with the app.
