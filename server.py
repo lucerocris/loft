@@ -49,7 +49,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, board as B, core as C, paths, projects as P, usage as U, webapi  # noqa: E402
+from loft import accounts as A, board as B, core as C, paths, projects as P, transcript as TR, usage as U, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -441,6 +441,50 @@ def timeline(jid, limit=40):
     return out
 
 
+def messages(jid, query):
+    """GET /api/cards/<id>/messages?limit=&before=&after= : the session as chat items.
+    See loft/transcript.py for the item shapes and cursors. (status, payload)."""
+    import re
+    from urllib.parse import parse_qs
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", jid or ""):
+        return 404, {"error": "not found"}
+    q = {k: v[-1] for k, v in parse_qs(query).items()}
+    num = lambda k: int(q[k]) if q.get(k, "").isdigit() else None
+    sf = B.JOBS / jid / "state.json"
+    try:
+        st = json.loads(sf.read_text())
+    except FileNotFoundError:
+        if any(t.get("id") == jid for t in B.load_todos()):
+            return 200, {"id": jid, "state": "todo", "working": False, "detail": "", "session": None, "cursor": 0,
+                         "start": 0, "more": False, "gap": False, "items": [], "pending": None}
+        return 404, {"error": "not found"}
+    except ValueError:
+        return 500, {"error": "unreadable state"}
+    col = C.bucket(st)
+    detail = (st.get("detail") or "").strip()
+    if col == "needs" and detail.startswith("(idle"):
+        col = "todo"
+    out = {"id": jid, "state": col, "working": col == "running", "detail": detail, "pending": None}
+    tp = C.transcript_of(st)
+    if not tp:
+        return 200, {**out, "session": None, "cursor": 0, "start": 0, "more": False, "gap": False, "items": []}
+    after = num("after")
+    if after is not None and q.get("session") and q["session"] != tp.stem:
+        after = None   # a different session file now (resumed): send a fresh page
+    try:
+        page = TR.read_page(tp, limit=num("limit") or 60, before=num("before"), after=after)
+    except OSError:
+        return 200, {**out, "session": None, "cursor": 0, "start": 0, "more": False, "gap": False, "items": []}
+    if after is None and q.get("session") and q["session"] != tp.stem:
+        page["reset"] = True
+    if col in ("needs", "failed"):
+        ask = TR.pending_options(page["items"])
+        if ask is None and (after is not None or num("before") is not None):
+            ask = TR.pending_options(TR.read_page(tp, limit=12)["items"])
+        out["pending"] = {"text": detail, "question": ask}
+    return 200, {**out, **page}
+
+
 def snapshot():
     cards = B.load_cards(show_all_done=True)
     for c in cards:
@@ -771,6 +815,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, snapshot())
         if path.startswith("/api/timeline/"):
             return self._send(200, timeline(path.rsplit("/", 1)[-1]))
+        parts = path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "cards"] and parts[3] == "messages":
+            return self._send(*messages(parts[2], urlparse(self.path).query))
         if path == "/api/events":
             return self.events()
         if path.startswith("/api/accounts") or path.startswith("/ws/term/login-"):
