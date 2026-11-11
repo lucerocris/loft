@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+docs/references/
+.playwright-mcp/
+.claude/
+# local state never belongs in the repo
+accounts.json
+config.json
+devices.json
+.credentials.json
+venv/
+.venv/
+*.log

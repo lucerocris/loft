@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>loft</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z' fill='%23EDEEF0' stroke='%23EDEEF0' stroke-width='4' stroke-linejoin='round'/%3E%3Ccircle cx='22.5' cy='38' r='7' fill='%235B8DFF'/%3E%3Ccircle cx='41.5' cy='38' r='7' fill='%2346C07D'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/xterm.css">
+<style>
+@font-face { font-family: "Geist"; src: url(/static/fonts/Geist-Variable.woff2) format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url(/static/fonts/GeistMono-Variable.woff2) format("woff2"); font-weight: 100 900; font-display: swap; }
+/* Tokens: Figma "Agent desk — brand, system, app" → Design system (Color / Dimension / text styles) */
+:root {
+  color-scheme: dark;
+  --canvas: #0F1012; --surface: #15171A; --raised: #1C1F23; --selected: #262A2F;
+  --border: #24272C; --border-strong: #30343A;
+  --t1: #EDEEF0; --t2: #A4A8AF; --t3: #6E737B; --on-primary: #0F1012;
+  --primary: #EDEEF0; --primary-hover: #FFFFFF;
+  --work: #5B8DFF; --pers: #46C07D; --needs: #F2B544; --failed: #F0685A;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px;
+  --sans: "Geist", "Inter", system-ui, sans-serif;
+  --mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  --inbox: 372px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--canvas); color: var(--t1); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; overflow: hidden; font-variant-numeric: tabular-nums; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--t2); outline-offset: 2px; }
+::selection { background: rgba(91,141,255,.3); }
+.ic { width: 16px; height: 16px; stroke-width: 2; flex: none; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+.dot.work { background: var(--work); } .dot.pers { background: var(--pers); }
+.mono { font-family: var(--mono); }
+kbd { font: 11px var(--mono); color: var(--t3); }
+
+.app { display: grid; grid-template-columns: var(--inbox) minmax(0, 1fr); height: 100dvh; }
+
+/* ---------- inbox ---------- */
+.inbox { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.top { display: flex; align-items: center; gap: 8px; padding: 14px 12px 10px 20px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; letter-spacing: -.03em; }
+.brand svg { width: 20px; height: 20px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--r-md); border: 1px solid transparent; background: none; cursor: pointer; font-weight: 500; white-space: nowrap; }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--primary); color: var(--on-primary); } .btn.primary:hover { background: var(--primary-hover); }
+.btn.secondary { background: var(--raised); border-color: var(--border-strong); } .btn.secondary:hover { background: var(--selected); }
+.btn.quiet { color: var(--t2); } .btn.quiet:hover { background: var(--raised); color: var(--t1); }
+.btn[disabled] { opacity: .4; cursor: not-allowed; }
+.top .btn { margin-left: auto; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 0 12px 6px; }
+.filters .gear { margin-left: auto; width: 28px; height: 28px; color: var(--t3); }
+.filters button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 5px 10px; border-radius: 99px; cursor: pointer; font-size: 12px; }
+.filters button:hover { color: var(--t1); }
+.filters button[aria-pressed="true"] { background: var(--selected); color: var(--t1); }
+.list { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.sec { display: flex; align-items: center; gap: 6px; padding: 14px 12px 6px; font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--t3); }
+.sec.alert { color: var(--needs); }
+.sec button { margin-left: auto; border: 0; background: none; color: var(--t3); font: inherit; cursor: pointer; padding: 0; }
+.sec button:hover { color: var(--t1); }
+.item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md); cursor: pointer; min-width: 0; }
+.item:hover { background: var(--raised); }
+.item[aria-selected="true"] { background: var(--selected); }
+.item .sd { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.sd.needs { background: var(--needs); } .sd.failed { background: var(--failed); } .sd.done { background: var(--t3); opacity: .6; }
+.sd.todo { border: 1.5px solid var(--t3); } .sd.work { background: var(--work); } .sd.pers { background: var(--pers); }
+.sd.live { animation: pulse 1.8s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 currentColor; } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
+.sd.work.live { color: rgba(91,141,255,.5); } .sd.pers.live { color: rgba(70,192,125,.5); }
+.sd.acc { background: var(--ac); color: color-mix(in srgb, var(--ac) 50%, transparent); }
+.item .tx { flex: 1; min-width: 0; }
+.item .t { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .d { font-size: 12px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item.needs .d { color: var(--t2); } .item.done .t { color: var(--t2); }
+.item .m { display: flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--t3); flex: none; }
+.item .m .dot { width: 6px; height: 6px; }
+.none { padding: 4px 12px 6px; color: var(--t3); font-size: 12px; }
+.usage { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 20px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--t2); }
+.usage span { display: inline-flex; align-items: center; gap: 6px; }
+.usage b { font: 11px var(--mono); color: var(--t3); font-weight: 400; } .usage b.hot { color: var(--needs); }
+
+/* ---------- pane ---------- */
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.head { display: flex; align-items: center; gap: 12px; padding: 22px 32px 18px; }
+.head .ti { flex: 1; min-width: 0; }
+.title { font-size: 18px; font-weight: 600; letter-spacing: -.01em; border: 1px solid transparent; background: none; border-radius: var(--r-sm); padding: 1px 6px; margin-left: -7px; width: 100%; text-overflow: ellipsis; }
+.title:hover { border-color: var(--border); } .title:focus { outline: none; border-color: var(--border-strong); background: var(--surface); }
+.meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--t2); margin-top: 4px; flex-wrap: wrap; }
+.meta .sep { color: var(--t3); } .meta .path { font: 11px var(--mono); color: var(--t3); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-needs { color: var(--needs); } .st-failed { color: var(--failed); } .st-work { color: var(--work); } .st-pers { color: var(--pers); } .st-muted { color: var(--t3); }
+.ibtn { width: 32px; height: 32px; display: inline-grid; place-items: center; border: 0; border-radius: var(--r-md); background: none; color: var(--t2); cursor: pointer; }
+.ibtn:hover { background: var(--raised); color: var(--t1); }
+.body { flex: 1; min-height: 0; overflow: auto; padding: 12px 32px; display: flex; flex-direction: column; gap: 20px; }
+.col { width: min(100%, 680px); display: flex; flex-direction: column; gap: 12px; }
+.label { font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--t3); }
+.label.alert { color: var(--needs); }
+.ask { font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.peek { border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+.peek .ph { display: flex; align-items: center; gap: 8px; color: var(--t3); font-size: 11px; font-weight: 500; }
+.peek .ph button { margin-left: auto; border: 0; background: none; color: var(--t3); font: 11px var(--mono); cursor: pointer; padding: 0; }
+.peek .ph button:hover { color: var(--t1); }
+.peek .ln { font: 12px/1.6 var(--mono); color: var(--t2); overflow-wrap: anywhere; }
+.foot { padding: 0 32px 24px; }
+.composer { width: min(100%, 680px); display: flex; align-items: flex-end; gap: 8px; border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--r-md); padding: 8px 8px 8px 14px; }
+.composer:focus-within { border-color: var(--t3); }
+.composer textarea { flex: 1; border: 0; background: none; outline: none; resize: none; min-height: 22px; max-height: 200px; padding: 5px 0; line-height: 1.5; }
+.hint { margin-top: 6px; font: 11px var(--mono); color: var(--t3); }
+.send { width: 32px; height: 32px; border: 0; border-radius: var(--r-sm); background: var(--primary); color: var(--on-primary); display: inline-grid; place-items: center; cursor: pointer; flex: none; }
+.send:hover { background: var(--primary-hover); } .send[disabled] { background: var(--raised); color: var(--t3); cursor: default; }
+.mic { width: 32px; height: 32px; border: 0; border-radius: var(--r-sm); background: none; color: var(--t2); display: inline-grid; place-items: center; cursor: pointer; flex: none; position: relative; }
+.mic:hover { background: var(--raised); color: var(--t1); }
+.mic.rec { background: var(--failed); color: var(--on-primary); animation: recpulse 1.4s ease-out infinite; }
+.mic.busy { color: var(--t3); cursor: progress; }
+@keyframes recpulse { 0% { box-shadow: 0 0 0 0 rgba(240,104,90,.5); } 70%, 100% { box-shadow: 0 0 0 8px transparent; } }
+.voice-note { font: 11px var(--mono); color: var(--failed); margin-top: 6px; }
+
+/* terminal */
+.term { flex: 1; min-height: 0; position: relative; border-top: 1px solid var(--border); }
+.term #xt { position: absolute; inset: 10px 18px 12px 26px; }
+.term .xterm-viewport { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.cover { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15,16,18,.92); color: var(--t2); z-index: 2; }
+.cover > div { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.tmic { position: absolute; right: 22px; bottom: 16px; z-index: 3; background: var(--raised); border: 1px solid var(--border-strong); }
+.tbar { display: flex; gap: 14px; white-space: nowrap; overflow: hidden; padding: 8px 32px 12px; font: 11px var(--mono); color: var(--t3); border-top: 1px solid var(--border); }
+
+/* new task */
+.new { padding: 28px 32px; display: flex; flex-direction: column; gap: 18px; overflow: auto; }
+.new h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.bigbox { width: min(100%, 680px); position: relative; }
+.bigbox textarea { width: 100%; min-height: 200px; resize: vertical; border: 1px solid var(--t3); background: var(--surface); border-radius: var(--r-lg); padding: 16px 52px 16px 18px; font-size: 16px; line-height: 1.55; outline: none; }
+.bigbox .mic { position: absolute; top: 12px; right: 12px; }
+.opts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); }
+.seg button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 6px 12px; border-radius: var(--r-sm); cursor: pointer; font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--selected); color: var(--t1); }
+.folder { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); padding: 0 12px; height: 38px; color: var(--t3); }
+.folder input { border: 0; background: none; outline: none; font: 12px var(--mono); color: var(--t2); width: 260px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.err { color: var(--failed); font-size: 12px; } .err:empty { display: none; }
+
+/* accounts + first run */
+.accts { padding: 28px 32px; display: flex; flex-direction: column; gap: 18px; overflow: auto; min-height: 0; }
+.accts h1 { margin: 0; font-size: 18px; font-weight: 600; flex: 1; }
+.accts .lede { margin: 0; color: var(--t2); max-width: 640px; }
+.alist { width: min(100%, 680px); display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.arow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 14px 14px 14px 16px; }
+.arow + .arow { border-top: 1px solid var(--border); }
+.arow > .dot { width: 10px; height: 10px; margin-top: 8px; }
+.arow .nm { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.arow .nm input { font-weight: 500; font-size: 14px; border: 1px solid transparent; background: none; border-radius: var(--r-sm); padding: 2px 6px; margin-left: -7px; field-sizing: content; min-width: 60px; max-width: 100%; }
+.arow .nm input:hover { border-color: var(--border); } .arow .nm input:focus { outline: none; border-color: var(--border-strong); background: var(--canvas); }
+.badge { font: 11px var(--mono); color: var(--t3); border: 1px solid var(--border-strong); border-radius: 99px; padding: 0 7px; }
+.arow .sub { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--t3); min-width: 0; }
+.arow .sub .em { color: var(--t2); } .arow .sub .bad { color: var(--failed); } .arow .sub .warn { color: var(--needs); }
+.arow .dir { grid-column: 2; font: 11px var(--mono); color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arow .acts { grid-column: 3; grid-row: 1 / span 3; display: flex; gap: 4px; align-items: center; }
+.arow .acts .btn { height: 28px; padding: 0 10px; font-size: 12px; }
+.arow .acts .danger { color: var(--failed); } .arow .acts .danger.armed { background: var(--failed); color: var(--on-primary); }
+.sw8 { grid-column: 2; display: flex; gap: 6px; padding-top: 4px; }
+.sw8 button { width: 16px; height: 16px; border-radius: 50%; border: 0; cursor: pointer; padding: 0; outline-offset: 2px; }
+.sw8 button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--t1); }
+.addf { width: min(100%, 680px); display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
+.addf .row input[type=text] { height: 34px; border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--r-sm); padding: 0 10px; outline: none; width: 220px; }
+.addf .row input[type=text]:focus { border-color: var(--t3); }
+.addf .sw8 { padding: 0; }
+.chk { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; } .chk input { margin-top: 3px; accent-color: var(--t1); }
+.chk span { color: var(--t2); } .chk b { color: var(--t1); font-weight: 500; display: block; }
+.lterm { width: min(100%, 760px); height: 300px; position: relative; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--canvas); flex: none; }
+.lterm #xt { position: absolute; inset: 10px 12px; }
+.mini { font: 11px var(--mono); color: var(--t3); }
+.accts .row > svg { width: 28px; height: 28px; flex: none; }
+@media (max-width: 820px) { .accts { padding: 20px 16px; } .arow { grid-template-columns: auto minmax(0, 1fr); } .arow .acts { grid-column: 2; grid-row: auto; flex-wrap: wrap; } .lterm { height: 340px; } }
+
+/* empty */
+.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+.empty svg { width: 56px; height: 56px; }
+.empty h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.empty p { margin: 0; color: var(--t3); }
+
+/* menu + toast */
+.menu { position: fixed; z-index: 40; min-width: 210px; background: var(--raised); border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 4px; box-shadow: 0 12px 32px rgba(0,0,0,.45); }
+.menu button { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: none; cursor: pointer; text-align: left; }
+.menu button:hover { background: var(--selected); } .menu button[disabled] { color: var(--t3); background: none; cursor: not-allowed; }
+.menu .danger { color: var(--failed); } .menu .danger.armed { background: var(--failed); color: var(--on-primary); }
+.menu hr { border: 0; border-top: 1px solid var(--border-strong); margin: 4px 2px; }
+.toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; z-index: 50; pointer-events: none; }
+.toast { background: var(--selected); border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 9px 14px; font-size: 12px; max-width: 520px; }
+.toast.err { border-color: var(--failed); color: var(--failed); }
+
+.back { display: none !important; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; }
+  .app.open .inbox { display: none; } .app:not(.open) .pane { display: none; }
+  .head, .body, .foot, .new, .tbar { padding-left: 16px; padding-right: 16px; }
+  .back { display: inline-grid !important; }
+}
+/* ---------- board view ---------- */
+.vsw { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); }
+.vsw button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 3px 10px; border-radius: var(--r-sm); cursor: pointer; font-weight: 500; }
+.vsw button:hover { color: var(--t1); }
+.vsw button[aria-pressed="true"] { background: var(--selected); color: var(--t1); }
+.vsw kbd { font-size: 10px; }
+.top .vsw { margin-left: 8px; }
+.boardv { display: none; flex-direction: column; min-width: 0; min-height: 0; }
+.app.board { grid-template-columns: minmax(0, 1fr); }
+.app.board.open { grid-template-columns: minmax(0, 1fr) min(560px, 45vw); }
+.app.board .inbox { display: none; } .app.board .boardv { display: flex; }
+.app.board:not(.open) .pane { display: none; }
+.app.board .pane { border-left: 1px solid var(--border); background: var(--canvas); }
+.app.board .back { display: inline-grid !important; }
+.btop { display: flex; align-items: center; gap: 16px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--border); min-width: 0; }
+.btop .filters { padding: 0; }
+.btop .usage { border: 0; padding: 0; margin-left: auto; }
+.cols { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px; padding: 16px; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.bcol { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: var(--r-lg); min-height: 0; min-width: 0; overflow-y: auto; scrollbar-width: none; }
+.bcol.drop { background: var(--surface); border-color: var(--border-strong); }
+.bh { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 2px 4px 6px; font-weight: 500; color: var(--t2); position: sticky; top: -8px; background: var(--canvas); z-index: 1; }
+.bcol.drop .bh { background: var(--surface); }
+.bh.alert { color: var(--needs); } .bh .n { font: 11px var(--mono); color: var(--t3); }
+.bh .ibtn { margin-left: auto; width: 24px; height: 24px; border-radius: var(--r-sm); }
+.bcard { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); cursor: pointer; min-width: 0; }
+.bcard:hover { border-color: var(--border-strong); }
+.bcard[aria-selected="true"] { background: var(--selected); }
+.bcard[draggable="true"] { cursor: grab; }
+.bcard.dragging { opacity: .35; }
+.bcard.starting { opacity: .5; pointer-events: none; }
+.bcard .r1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bcard .t { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bcard .s { font-size: 12px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bcard.needs .s { color: var(--t2); } .bcard.failed .s { color: var(--failed); } .bcard.done .t { color: var(--t2); }
+.bcard .m { display: flex; align-items: center; gap: 6px; padding-top: 4px; font: 11px var(--mono); color: var(--t3); min-width: 0; }
+.bcard .m .dot { width: 6px; height: 6px; }
+.bcard .m .f { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bcard .age { font: 11px var(--mono); color: var(--t3); flex: none; }
+.slot { display: flex; align-items: center; justify-content: center; gap: 8px; height: 84px; flex: none; border: 1px dashed var(--t3); border-radius: var(--r-md); font-weight: 500; }
+.bempty { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 24px 16px; border: 1px dashed var(--border); border-radius: var(--r-md); text-align: center; }
+.bempty b { font-weight: 500; color: var(--t2); } .bempty span { font-size: 12px; color: var(--t3); }
+.bmore { border: 0; background: none; color: var(--t3); font-size: 12px; text-align: left; padding: 4px 6px; cursor: pointer; }
+.bmore:hover { color: var(--t1); }
+.bhint { padding: 0 24px 14px; font: 11px var(--mono); color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1100px) { .btop .usage { display: none; } .btop .btn { margin-left: auto; } }
+.app.board.open .btop .usage { display: none; } .app.board.open .btop .btn { margin-left: auto; }
+.app.board.open .cols { grid-auto-columns: minmax(188px, 1fr); }
+@media (max-width: 820px) {
+  .app.board.open { grid-template-columns: 1fr; }
+  .app.board.open .boardv { display: none; }
+  .btop { flex-wrap: wrap; gap: 10px; padding: 10px 16px; }
+  .btop .filters { order: 3; width: 100%; }
+  .cols { grid-auto-columns: 82vw; scroll-snap-type: x mandatory; padding: 12px 16px; }
+  .bcol { scroll-snap-align: start; }
+  .bcard { padding: 13px 14px; min-height: 44px; }
+  .bhint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .sd.live, .mic.rec { animation: none; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="inbox" aria-label="Agents">
+    <div class="top">
+      <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#5B8DFF"/><circle cx="41.5" cy="38" r="7" fill="#46C07D"/></svg>loft</div>
+      <div class="vsw" data-vsw role="group" aria-label="View"></div>
+      <button class="btn primary" id="newBtn" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button>
+    </div>
+    <div class="filters" id="filters" role="group" aria-label="Account"></div>
+    <div class="list" id="list"></div>
+    <div class="usage" id="usage"></div>
+  </aside>
+  <section class="boardv" id="boardv" aria-label="Board">
+    <div class="btop"><div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#5B8DFF"/><circle cx="41.5" cy="38" r="7" fill="#46C07D"/></svg>loft</div>
+      <div class="vsw" data-vsw role="group" aria-label="View"></div><div class="filters" id="bfilters" role="group" aria-label="Account"></div>
+      <div class="usage" id="busage"></div><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div>
+    <div class="cols" id="cols"></div>
+    <div class="bhint">j k move · h l column · Enter open · s start a todo · drag a todo to Working to start it · b inbox · n new</div>
+  </section>
+  <main class="pane" id="pane"></main>
+</div>
+<div class="menu" id="menu" hidden></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="/static/lucide.min.js"></script>
+<script src="/static/xterm.js"></script>
+<script src="/static/addon-fit.js"></script>
+<script>
+const TOKEN = "__CAGENTS_TOKEN__";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+const MARK = (b = "#EDEEF0", l = "#5B8DFF", r = "#46C07D") => `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="${b}" stroke="${b}" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="${l}"/><circle cx="41.5" cy="38" r="7" fill="${r}"/></svg>`;
+
+let S = { cards: [], usage: {}, dirs: [], voice: false }, loaded = false;
+let acct = store.get("loft.acct") || "";            // "" | work | personal
+let sel = new URL(location.href).searchParams.get("a") || null;   // card id | "new" | null
+let showDone = false, termView = {}, prevNeeds = null, drafts = {};
+let newAcct = store.get("loft.newAcct") || "";
+let AC = null, adding = false, loginFor = null, loginEnded = false;    // accounts screen: listing, add form open, account signing in
+let view = new URL(location.href).searchParams.get("v") || store.get("loft.view") || "inbox";   // inbox | board
+let dragId = null, boardStale = false, startingIds = new Set();
+
+/* ---------- helpers ---------- */
+async function api(path, body, raw) {
+  const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "X-Cagents-Token": TOKEN, "Content-Type": raw ? raw : "application/json" }, body: body ? (raw ? body : JSON.stringify(body)) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.message || j.error || r.statusText);
+  return j;
+}
+function toast(m, err) { if (!m) return; const t = document.createElement("div"); t.className = "toast" + (err ? " err" : ""); t.textContent = m; $("#toasts").append(t); setTimeout(() => t.remove(), err ? 6000 : 2600); }
+async function act(id, a, body = {}, quiet) { try { const r = await api(`/api/cards/${id}/${a}`, body); if (!quiet) toast(r.message); return r; } catch (e) { toast(e.message, true); return null; } }
+function ago(iso) { if (!iso) return ""; const s = (Date.now() - Date.parse(iso)) / 1000; if (s < 60) return "now"; for (const [u, n] of [["d", 86400], ["h", 3600], ["m", 60]]) if (s >= n) return Math.floor(s / n) + u; }
+const icons = () => lucide.createIcons({ attrs: { class: "ic" } });
+const statusOf = c => c.failed ? "failed" : c.col;
+const OTHER = { id: null, label: "Other login", hex: "#6E737B", email: "" };
+const accById = id => (S.accounts || []).find(a => a.id === id);
+const accOf = c => accById(c.account) || OTHER;
+const accTitle = a => a.label + (a.email ? " · " + a.email : "");
+const dotH = (a, cls = "") => `<span class="dot ${cls}" style="background:${a.hex}" title="${esc(accTitle(a))}"></span>`;
+const accColor = c => `style="color:${accOf(c).hex}"`;
+const visible = () => S.cards.filter(c => !acct || !accById(acct) || c.account === acct);
+const byTime = l => l.slice().sort((a, b) => (b.pinned - a.pinned) || (Date.parse(b.updated || 0) - Date.parse(a.updated || 0)));
+const needsList = () => byTime(visible().filter(c => c.col === "needs"));
+const cardOf = id => S.cards.find(c => c.id === id);
+const noPrompt = c => !c.detail || c.detail === "(no prompt yet)";
+function setSel(id) { sel = id; const u = new URL(location.href); id ? u.searchParams.set("a", id) : u.searchParams.delete("a"); history.replaceState(null, "", u); render(); }
+function setView(v) {
+  view = v === "board" ? "board" : "inbox"; store.set("loft.view", view);
+  const u = new URL(location.href); view === "board" ? u.searchParams.set("v", "board") : u.searchParams.delete("v"); history.replaceState(null, "", u);
+  render(); if (view === "board" && sel && cardOf(sel)) focusCard(sel);
+}
+
+/* ---------- inbox ---------- */
+function renderInbox() {
+  $("#filters").innerHTML = filtersHTML();
+  document.querySelectorAll("[data-vsw]").forEach(el => el.innerHTML = [["inbox", "Inbox", "i"], ["board", "Board", "b"]].map(([k, l, key]) =>
+    `<button data-view="${k}" aria-pressed="${view === k}" title="${l} (B switches)">${l}</button>`).join(""));
+  const v = visible(), by = k => byTime(v.filter(c => c.col === k));
+  const item = c => {
+    const s = statusOf(c), dotCls = s === "running" ? "acc live" : s;
+    const d = c.kind === "todo" ? (noPrompt(c) ? "Not started" : c.detail) : (c.col === "done" && c.result ? c.result : c.detail) || "";
+    return `<div class="item ${s}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}">
+      <span class="sd ${dotCls}"${s === "running" ? ` style="--ac:${accOf(c).hex}"` : ""} title="${{ needs: "Needs you", running: "Working", todo: "Todo", done: "Done", failed: "Failed" }[s]}"></span>
+      <div class="tx"><div class="t">${esc(c.name)}</div><div class="d">${esc(d)}</div></div>
+      <div class="m">${ago(c.updated)}${dotH(accOf(c))}</div></div>`;
+  };
+  const sec = (label, list, cls, extra = "") => `<div class="sec ${cls || ""}">${label} <span>${list.length}</span>${extra}</div>`;
+  const needs = by("needs"), run = by("running"), todo = by("todo"), done = by("done");
+  let h = sec("Needs you", needs, needs.length ? "alert" : "") + (needs.length ? needs.map(item).join("") : `<div class="none">Nothing waiting on you</div>`);
+  if (run.length) h += sec("Working", run) + run.map(item).join("");
+  if (todo.length) h += sec("Todo", todo) + todo.map(item).join("");
+  if (done.length) h += sec("Done", done, "", `<button data-toggle-done>${showDone ? "Hide" : "Show"}</button>`) + (showDone ? done.slice(0, 30).map(item).join("") : "");
+  $("#list").innerHTML = h;
+  $("#usage").innerHTML = usageHTML();
+}
+function filtersHTML() {
+  const cur = accById(acct) ? acct : "", accs = S.accounts || [];
+  const btns = accs.length > 1 ? [["", "All"], ...accs.map(a => [a.id, a.label])].map(([k, l]) =>
+    `<button data-acct="${esc(k)}" aria-pressed="${cur === k}"${k ? ` title="${esc(accTitle(accById(k)))}"` : ""}>${k ? dotH(accById(k)) : ""}${esc(l)}</button>`).join("") : "";
+  return btns + `<button class="ibtn gear" data-accounts title="Accounts (,)" aria-label="Accounts"><i data-lucide="settings-2" class="ic"></i></button>`;
+}
+function usageHTML() {
+  const u = S.usage || {}, num = x => x != null && x !== "" && x !== "—" && !isNaN(+x) ? +x : null;
+  return (S.accounts || []).map(a => {
+    const w = num(u[a.id]?.seven), f = num(u[a.id]?.five); const parts = [f != null ? `5h ${f}%` : "", w != null ? `7d ${w}%` : ""].filter(Boolean).join(" · ");
+    return `<span title="${esc(accTitle(a))}${u[a.id]?.error ? " · " + esc(u[a.id].error) : ""}">${dotH(a)}${esc(a.label)}<b class="${Math.max(w || 0, f || 0) >= 85 ? "hot" : ""}">${parts || "—"}</b></span>`;
+  }).join("");
+}
+
+/* ---------- board ---------- */
+const BCOLS = [["todo", "Todo"], ["running", "Working"], ["needs", "Needs you"], ["done", "Done"]];
+const RECENT = 86400e3;   // Done shows the last day unless expanded
+function boardCols() {
+  const v = visible(), out = {};
+  for (const [k] of BCOLS) out[k] = byTime(v.filter(c => c.col === k));
+  out.doneAll = out.done.length;
+  if (!showDone) { const now = Date.now(); const recent = out.done.filter(c => now - Date.parse(c.updated || 0) < RECENT); out.done = (recent.length ? recent : out.done.slice(0, 3)).slice(0, 8); }
+  return out;
+}
+function renderBoard() {
+  if (view !== "board") return;
+  if (dragId) { boardStale = true; return; }          // don't rebuild under the pointer mid-drag
+  boardStale = false;
+  $("#bfilters").innerHTML = filtersHTML(); $("#busage").innerHTML = usageHTML();
+  const had = document.activeElement?.closest?.("#cols .bcard")?.dataset.id;
+  const cols = boardCols();
+  const card = c => {
+    const s = statusOf(c), todo = c.kind === "todo", proj = c.project === "~" ? "home" : c.project;
+    const st = todo ? (noPrompt(c) ? "Not started" : c.detail) : (c.col === "done" && c.result ? c.result : c.detail) || "";
+    const live = s === "running" ? `<span>·</span><span ${accColor(c)}>live</span>` : "";
+    return `<div class="bcard ${s}${startingIds.has(c.id) ? " starting" : ""}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}"${todo ? ` draggable="true" title="Drag to Working to start"` : ""}>
+      <div class="r1"><span class="t">${esc(c.name)}</span><span class="age">${ago(c.updated)}</span></div>
+      <div class="s">${esc(s === "failed" && !/^failed/i.test(st) ? "Failed · " + st : st)}</div>
+      <div class="m">${dotH(accOf(c))}<span class="f">${esc(proj)}</span>${live}</div></div>`;
+  };
+  const EMPTY = { todo: ["No todos", "Press N to write one, or save a task to Todo."], running: ["Nothing running", "Drag a todo here to start it."],
+    needs: ["Nothing waiting on you", "You'll get a notification when one comes back."], done: ["Nothing finished yet", "Finished agents land here."] };
+  $("#cols").innerHTML = BCOLS.map(([k, l]) => {
+    const list = cols[k], n = k === "done" ? cols.doneAll : list.length, alert = k === "needs" && n;
+    const more = k === "done" && cols.doneAll > list.length || (k === "done" && showDone && cols.doneAll > 3)
+      ? `<button class="bmore" data-toggle-done>${showDone ? "Show only the last day" : `Show all ${cols.doneAll}`}</button>` : "";
+    return `<div class="bcol" data-col="${k}" role="listbox" aria-label="${l}"><div class="bh ${alert ? "alert" : ""}">${alert ? `<span class="dot" style="background:var(--needs)"></span>` : ""}${l}<span class="n">${n}</span>
+      ${k === "todo" ? `<button class="ibtn" id="newBtn4" title="New task (N)" aria-label="New task"><i data-lucide="plus" class="ic"></i></button>` : ""}</div>
+      ${list.length ? list.map(card).join("") : `<div class="bempty"><b>${EMPTY[k][0]}</b><span>${EMPTY[k][1]}</span></div>`}${more}</div>`;
+  }).join("");
+  icons();
+  if (had) focusCard(had, true);
+}
+function focusCard(id, quiet) { const el = document.querySelector(`#cols [data-id="${CSS.escape(id)}"]`); if (el) { el.focus({ preventScroll: !!quiet }); if (!quiet) el.scrollIntoView({ block: "nearest", inline: "nearest" }); } }
+function boardMove(dy, dx) {
+  const cols = [...document.querySelectorAll("#cols .bcol")].map(col => [...col.querySelectorAll(".bcard")].map(e => e.dataset.id));
+  const cur = sel || document.activeElement?.closest?.("#cols .bcard")?.dataset.id;
+  let ci = cols.findIndex(l => l.includes(cur)), ri = ci < 0 ? 0 : cols[ci].indexOf(cur);
+  if (ci < 0) { ci = cols.findIndex(l => l.length); if (ci < 0) return; ri = 0; }
+  else if (dx) { let n = ci; do { n += dx; } while (n >= 0 && n < cols.length && !cols[n].length); if (n < 0 || n >= cols.length) return; ci = n; ri = Math.min(ri, cols[ci].length - 1); }
+  else ri = Math.max(0, Math.min(cols[ci].length - 1, ri + dy));
+  setSel(cols[ci][ri]); focusCard(cols[ci][ri]);
+}
+async function startTodo(id) {
+  const c = cardOf(id); if (!c || c.kind !== "todo" || startingIds.has(id)) return;
+  if (noPrompt(c)) { toast("Write the prompt first, then start it.", true); return setSel(id); }
+  startingIds.add(id); renderBoard();
+  const r = await act(id, "start", {});
+  startingIds.delete(id); renderBoard();
+  const m = /started ([0-9a-f]{8})/.exec(r?.message || ""); if (m && sel === id) waitOpen(m[1]);
+}
+
+/* ---------- pane ---------- */
+let term = null, fit = null, ws = null, wsFor = null;
+function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], c.kind].join("|") : sel || "none"; }
+const SCREENS = ["new", "accounts", "setup"];
+function renderPane() {
+  if (loaded && S.setup && sel !== "accounts") sel = "setup";        // first run: no accounts.json yet
+  if (sel === "setup" && loaded && !S.setup) sel = "accounts";
+  const p = $("#pane"); let c = sel && !SCREENS.includes(sel) ? cardOf(sel) : null;
+  if (sel && !SCREENS.includes(sel) && !c && loaded) { sel = null; }
+  if (!sel && loaded && view !== "board") { const n = needsList()[0]; if (n) { sel = n.id; c = n; } }
+  $("#app").classList.toggle("open", !!sel);
+  $("#app").classList.toggle("board", view === "board");
+  const key = SCREENS.includes(sel) ? sel : paneKey(c);
+  if (p.dataset.key === key) { if (c) refreshPane(c); return; }   // keep typing / terminal alive
+  p.dataset.key = key;
+  if (sel !== "new" && !(sel === "accounts" && loginFor && wsFor === "login-" + loginFor) && (!c || c.kind === "todo" || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
+  if (sel === "new") return paneNew(p);
+  if (sel === "accounts" || sel === "setup") return paneAccounts(p);
+  if (!c) return paneQuiet(p);
+  if (c.kind === "todo") return paneTodo(p, c);
+  if (c.col === "needs" && !termView[c.id]) return paneAsk(p, c);
+  return paneTerm(p, c);
+}
+function head(c, actions = true) {
+  const s = statusOf(c);
+  const st = { needs: ["Needs you", "st-needs"], running: ["Working", "st-acc"], todo: ["Todo", "st-muted"], done: ["Done", "st-muted"], failed: ["Failed", "st-failed"] }[s];
+  const proj = c.project === "~" ? "home" : c.project;
+  return `<div class="head"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
+    <div class="ti"><label class="sr-only" hidden for="title">Name</label><input class="title" id="title" value="${esc(c.name)}" spellcheck="false" title="Click to rename">
+    <div class="meta">${dotH(accOf(c))}${esc(accOf(c).label)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span></div></div>
+    ${actions && c.col === "needs" ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
+    <button class="ibtn" data-menu aria-label="More actions" title="More"><i data-lucide="ellipsis" class="ic"></i></button></div>`;
+}
+const micBtn = (target, cls = "") => S.voice ? `<button class="mic ${cls}" data-mic="${target}" title="Speak (V)" aria-label="Speak"><i data-lucide="mic" class="ic"></i></button>` : "";
+function paneAsk(p, c) {
+  p.innerHTML = `${head(c)}
+    <div class="body"><div class="col">
+      <div class="label alert">It's asking</div>
+      <div class="ask" id="askText">${esc(c.detail || "It stopped and is waiting for you.")}</div>
+      <div class="chips"><button class="btn secondary" data-quick="Yes, go ahead.">Yes, go ahead</button><button class="btn secondary" data-quick="No — stop there and wait.">No, stop there</button><button class="btn secondary" data-quick="Explain that in more detail first.">Explain more</button></div>
+    </div>
+    <div class="col"><div class="peek"><div class="ph"><i data-lucide="square-terminal" class="ic"></i>Earlier<button data-toggle-term>Open terminal  t</button></div><div id="peek"><div class="ln">…</div></div></div></div></div>
+    <div class="foot"><div class="composer"><textarea id="reply" rows="1" placeholder="Reply to ${esc(c.name)}…">${esc(drafts[c.id] || "")}</textarea>${micBtn("reply")}<button class="send" data-send aria-label="Send" title="Send (Enter)"><i data-lucide="corner-down-left" class="ic"></i></button></div>
+    <div class="hint">Enter sends to the agent · Shift+Enter new line · ${S.voice ? "V to speak · " : ""}J/K next agent</div><div class="voice-note" id="vnote" hidden></div></div>`;
+  icons(); grow($("#reply")); loadPeek(c); setTimeout(() => $("#reply")?.focus(), 0);
+}
+async function loadPeek(c) {
+  try { const tl = await api(`/api/timeline/${c.id}`); const el = $("#peek"); if (!el || sel !== c.id) return;
+    const seen = new Set([c.detail]); const lines = [];
+    for (const e of tl.slice().reverse()) { const d = (e.detail || "").trim(); if (!d || seen.has(d)) continue; seen.add(d); lines.push(d); if (lines.length >= 3) break; }
+    el.innerHTML = lines.length ? lines.reverse().map(l => `<div class="ln">● ${esc(l)}</div>`).join("") : `<div class="ln">No earlier output.</div>`;
+  } catch {}
+}
+function paneTerm(p, c) {
+  p.innerHTML = `${head(c)}<div class="term" id="termBox"><div id="xt"></div><div class="cover" id="cover" hidden></div>${S.voice ? `<button class="mic tmic" data-mic="term" title="Speak into the terminal (V)" aria-label="Speak"><i data-lucide="mic" class="ic"></i></button>` : ""}</div>
+    <div class="tbar"><span ${accColor(c)}>${esc(accTitle(accOf(c)))}</span><span>type straight into the agent</span>${S.voice ? "<span>V speaks</span>" : ""}<span>Shift+Esc leaves the terminal</span></div>
+    <div class="voice-note" id="vnote" hidden style="padding:0 32px 8px"></div>`;
+  icons(); mountTerm(c.id);
+}
+function paneTodo(p, c) {
+  p.innerHTML = `${head(c, false)}<div class="body"><div class="col">
+    <div class="bigbox"><textarea id="tprompt" placeholder="What should the agent do?">${esc(noPrompt(c) ? "" : c.detail)}</textarea>${micBtn("tprompt")}</div>
+    <div class="row"><button class="btn primary" data-start><i data-lucide="play" class="ic"></i>Start on ${esc(accOf(c).label)}</button><span class="hint" style="margin:0">Ctrl+Enter starts · in ${esc(c.cwd)}</span></div>
+    <div class="voice-note" id="vnote" hidden></div></div></div>`;
+  icons();
+}
+function paneNew(p) {
+  if (!accById(newAcct)) newAcct = accById(acct) ? acct : (S.defaultAccount || S.accounts?.[0]?.id || "");
+  const dir = store.get("loft.dir." + newAcct) || S.dirs[0] || "";
+  p.innerHTML = `<div class="new"><div class="row"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button><h1>New task</h1></div>
+    <div class="bigbox"><textarea id="nprompt" placeholder="What should an agent do?${S.voice ? " Type, or press V and say it." : ""}">${esc(drafts.new || "")}</textarea>${micBtn("nprompt")}</div>
+    <div class="opts"><div class="seg" role="group" aria-label="Account">${(S.accounts || []).map(a => `<button data-newacct="${esc(a.id)}" aria-pressed="${newAcct === a.id}" title="${esc(accTitle(a))}">${dotH(a)}${esc(a.label)}</button>`).join("")}</div>
+      <label class="folder" title="Project folder"><i data-lucide="folder" class="ic"></i><input id="ndir" list="dirs" value="${esc(dir)}" spellcheck="false" aria-label="Folder"><datalist id="dirs">${S.dirs.map(d => `<option value="${esc(d)}">`).join("")}</datalist></label></div>
+    <div class="row"><button class="btn primary" id="nStart"><i data-lucide="play" class="ic"></i>Start</button><button class="btn quiet" id="nTodo">Save to Todo</button><span class="hint" style="margin:0">Ctrl+Enter starts · the title is written for you${S.voice ? ` · say "…start it" at the end to start hands-free` : ""}</span></div>
+    <div class="err" id="nerr"></div><div class="voice-note" id="vnote" hidden></div></div>`;
+  icons(); setTimeout(() => $("#nprompt")?.focus(), 0);
+}
+function paneQuiet(p) {
+  const v = visible(), run = v.filter(c => c.col === "running").length, todo = v.filter(c => c.col === "todo").length;
+  p.innerHTML = `<div class="empty">${MARK("#24272C", "#30343A", "#30343A")}<h2>Nothing needs you</h2>
+    <p>${run} working · ${todo} in Todo. You'll get a notification when one comes back.</p>
+    <button class="btn secondary" id="newBtn2"><i data-lucide="plus" class="ic"></i>New task</button></div>`;
+  icons();
+}
+function refreshPane(c) {   // light update without rebuilding (keeps drafts, focus, terminal)
+  const a = $("#agoLabel"); if (a) a.textContent = ago(c.updated);
+  const q = $("#askText"); if (q && c.detail && q.textContent !== c.detail) q.textContent = c.detail;
+}
+function grow(t) { if (!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; }
+
+/* ---------- accounts + first run ---------- */
+async function loadAccounts() { try { AC = await api("/api/accounts"); } catch (e) { toast(e.message, true); } if (SCREENS.includes(sel) && sel !== "new") { $("#pane").dataset.key = ""; renderPane(); } }
+const swatches = (cur, attr) => `<div class="sw8" role="group" aria-label="Color">${(AC?.colors || []).map(c => `<button ${attr}="${c.name}" aria-pressed="${cur === c.name}" style="background:${c.hex}" title="${c.name}" aria-label="${c.name}"></button>`).join("")}</div>`;
+function paneAccounts(p) {
+  if (!AC) { p.innerHTML = `<div class="empty"><p>Loading accounts…</p></div>`; icons(); loadAccounts(); return; }
+  if (sel === "setup" && !AC.configured) return paneSetup(p);
+  const fmt = u => [u?.five != null ? `5h ${u.five}%` : "", u?.seven != null ? `7d ${u.seven}%` : ""].filter(Boolean).join(" · ");
+  const row = a => {
+    const st = a.pending ? `<span class="warn">Not signed in yet</span>` : a.status === "ok" ? `<span>Signed in</span>` : a.status === "expired" ? `<span class="warn" title="Claude refreshes it the next time an agent runs on this account">Token expired</span>` : `<span class="bad" title="${esc(a.statusText)}">Not signed in</span>`;
+    const login = loginFor === a.id;
+    return `<div class="arow" data-acc="${esc(a.id)}">${dotH(a)}
+      <div class="nm"><input value="${esc(a.label)}" data-rename="${esc(a.id)}" aria-label="Account name" spellcheck="false">${a.default ? `<span class="badge" title="New tasks and agents with no saved login use it">default</span>` : ""}${a.source ? `<span class="badge">${esc(a.source)}</span>` : ""}</div>
+      <div class="sub"><span class="em">${esc(a.email || "no email yet")}</span>${st}${fmt(a.usage) ? `<span>${fmt(a.usage)}</span>` : ""}</div>
+      <div class="dir" title="${esc(a.keychain || a.loginDir)}">${esc(a.defaultLogin ? `default login (${AC.platform === "macos" ? "Keychain" : a.loginDir})` : a.loginDir)}</div>
+      ${swatches(a.color, `data-acolor="${esc(a.id)}" data-c`)}
+      <div class="acts">${a.status !== "ok" || a.pending ? `<button class="btn secondary" data-login="${esc(a.id)}" ${login ? "disabled" : ""}>Sign in</button>` : ""}
+        ${a.default ? "" : `<button class="btn quiet" data-adefault="${esc(a.id)}">Make default</button>`}
+        ${AC.accounts.length > 1 ? `<button class="btn quiet danger" data-aremove="${esc(a.id)}"><span>Remove</span></button>` : ""}</div></div>`;
+  };
+  p.innerHTML = `<div class="accts"><div class="row"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button><h1>Accounts</h1>
+      <button class="btn quiet" data-organize title="Give every agent an explicit login and its account's color"><i data-lucide="wand-sparkles" class="ic"></i>Organize agents</button></div>
+    <p class="lede">Each agent runs on one Claude account and keeps it when it restarts. Colors show which account an agent bills.</p>
+    <div class="alist">${AC.accounts.map(row).join("")}</div>
+    ${loginFor ? `<div class="label">Signing in ${esc(AC.accounts.find(a => a.id === loginFor)?.label || "")} · finish in the browser, then come back</div><div class="lterm" id="termBox"><div id="xt"></div><div class="cover" id="cover" hidden></div></div>
+      <div class="row"><button class="btn secondary" data-identify="${esc(loginFor)}">I've signed in</button><button class="btn quiet" data-cancel-login>Cancel</button><span class="mini">Loft reads the account's email from its new login.</span></div>` : ""}
+    ${adding ? `<div class="addf"><div class="label">Add an account</div>
+      <div class="row"><input type="text" id="aname" placeholder="Name, e.g. Work" maxlength="40" spellcheck="false">${swatches(AC.newColor, "data-newcolor")}</div>
+      <div class="row"><button class="btn primary" data-addgo><i data-lucide="log-in" class="ic"></i>Sign in with the browser</button><button class="btn quiet" data-addcancel>Cancel</button></div>
+      <span class="mini">Loft keeps this login in its own folder and runs claude auth login for it below. Nothing is shared with your other accounts.</span><div class="err" id="aerr"></div></div>`
+      : `<div><button class="btn secondary" data-addacc ${loginFor ? "disabled" : ""}><i data-lucide="plus" class="ic"></i>Add account</button></div>`}
+    ${AC.cswap?.length ? `<div class="addf"><div class="label">From claude-swap</div><p class="lede" style="font-size:12px">${AC.cswap.map(esc).join("<br>")}</p>
+      <div><button class="btn secondary" data-cswap><i data-lucide="download" class="ic"></i>Import ${AC.cswap.length === 1 ? "it" : `all ${AC.cswap.length}`}</button> <span class="mini">uses each profile's login where it is; nothing is copied</span></div></div>` : ""}
+  </div>`;
+  icons();
+  if (loginFor && loginEnded && term) { $("#xt").appendChild(term.element); requestAnimationFrame(refit); }   // finished: keep its output, don't rerun
+  else if (loginFor) mountTerm("login-" + loginFor, { onClose: () => { loginEnded = true; checkLogin(loginFor); } });
+  if (adding) setTimeout(() => $("#aname")?.focus(), 0);
+}
+function paneSetup(p) {
+  const cs = AC.cswap || [];
+  p.innerHTML = `<div class="accts"><div class="row" style="gap:12px">${MARK()}<h1 style="flex:none">Set up Loft</h1></div>
+    <p class="lede">Loft shows every Claude Code background agent on this machine and runs each one on the Claude account you pick. Start with the login this machine already has; add more accounts after.</p>
+    ${AC.legacy ? `<label class="chk"><input type="checkbox" id="smig" checked><div><b>Bring over the Work / Personal setup</b><span>Found the older two-account setup. Keeps its logins, colors and existing agents as they are.</span></div></label>` : ""}
+    <div class="addf" id="sfirst"><div class="label">Your first account</div>
+      <div class="sub" style="color:var(--t2)">${AC.defaultEmail ? `Signed in as <b style="font-weight:500;color:var(--t1)">${esc(AC.defaultEmail)}</b>` : `No Claude login found yet. You can sign in on the next screen.`}</div>
+      <div class="row"><input type="text" id="slabel" value="Personal" maxlength="40" aria-label="Account name" spellcheck="false">${swatches(AC.setupColor || "green", "data-scolor")}</div></div>
+    ${cs.length ? `<label class="chk"><input type="checkbox" id="scswap" checked><div><b>Also use ${cs.length} claude-swap profile${cs.length > 1 ? "s" : ""}</b><span>${cs.map(esc).join("<br>")}</span></div></label>` : ""}
+    <div class="row"><button class="btn primary" data-setup><i data-lucide="check" class="ic"></i>Save and continue</button><span class="mini">writes accounts.json; change anything later under Accounts</span></div>
+    <div class="err" id="serr"></div></div>`;
+  icons();
+  const syncMig = () => { const m = $("#smig"); if (m) $("#sfirst").style.display = m.checked ? "none" : ""; }; syncMig(); $("#smig")?.addEventListener("change", syncMig);
+}
+async function checkLogin(id) {
+  try { const r = await api(`/api/accounts/${id}/identify`, {}); toast(r.message); loginFor = null; loginEnded = false; disconnectTerm(); }
+  catch (e) { toast(e.message, true); }
+  await loadAccounts();
+}
+async function accAct(id, action, body = {}) { try { const r = await api(`/api/accounts/${id}/${action}`, body); if (r.message && action !== "rename") toast(r.message); } catch (e) { toast(e.message, true); } await loadAccounts(); }
+async function accountsClick(t) {
+  if (t.dataset.acolor) return accAct(t.dataset.acolor, "color", { color: t.dataset.c });
+  if (t.hasAttribute("data-newcolor")) { AC.newColor = t.getAttribute("aria-label"); document.querySelectorAll("[data-newcolor]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
+  if (t.hasAttribute("data-scolor")) { AC.setupColor = t.getAttribute("aria-label"); document.querySelectorAll("[data-scolor]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
+  if (t.dataset.adefault) return accAct(t.dataset.adefault, "default");
+  if (t.dataset.aremove) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.querySelector("span").textContent = "Remove?"; return; } return accAct(t.dataset.aremove, "remove"); }
+  if (t.dataset.login) { loginFor = t.dataset.login; loginEnded = false; adding = false; $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.dataset.identify) return checkLogin(t.dataset.identify);
+  if (t.hasAttribute("data-cancel-login")) { loginFor = null; loginEnded = false; disconnectTerm(); return loadAccounts(); }
+  if (t.hasAttribute("data-addacc")) { adding = true; const used = new Set(AC.accounts.map(a => a.color)); AC.newColor = (AC.colors.find(c => !used.has(c.name)) || AC.colors[0]).name; $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.hasAttribute("data-addcancel")) { adding = false; $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.hasAttribute("data-addgo")) {
+    const label = $("#aname").value.trim(); if (!label) { $("#aerr").textContent = "Give it a name first."; return $("#aname").focus(); }
+    t.disabled = true;
+    try { const r = await api("/api/accounts/add", { label, color: AC.newColor }); adding = false; loginFor = r.id; loginEnded = false; await loadAccounts(); }
+    catch (e) { $("#aerr").textContent = e.message; t.disabled = false; }
+    return;
+  }
+  if (t.hasAttribute("data-cswap")) { t.disabled = true; try { const r = await api("/api/accounts/import-cswap", {}); toast(r.message); } catch (e) { toast(e.message, true); } return loadAccounts(); }
+  if (t.hasAttribute("data-organize")) { t.disabled = true; try { const r = await api("/api/accounts/organize", {}); toast(r.message); } catch (e) { toast(e.message, true); } t.disabled = false; return; }
+  if (t.hasAttribute("data-setup")) {
+    t.disabled = true;
+    try {
+      const r = await api("/api/accounts/setup", { migrate: !!$("#smig")?.checked, label: $("#slabel")?.value.trim(), color: AC.setupColor || "green", importCswap: !!$("#scswap")?.checked });
+      toast(r.message); AC = r; S = await api("/api/state"); setSel("accounts");
+    } catch (e) { $("#serr").textContent = e.message; t.disabled = false; }
+  }
+}
+
+/* ---------- terminal ---------- */
+function mountTerm(id, opt = {}) {
+  if (!term) {
+    term = new Terminal({ fontFamily: '"Geist Mono", "JetBrains Mono", monospace', fontSize: 13, lineHeight: 1.2, cursorBlink: true, scrollback: 5000,
+      theme: { background: "#0F1012", foreground: "#EDEEF0", cursor: "#EDEEF0", selectionBackground: "rgba(91,141,255,.35)", black: "#1C1F23", brightBlack: "#6E737B",
+        blue: "#5B8DFF", brightBlue: "#8FB0FF", green: "#46C07D", brightGreen: "#7DD6A4", yellow: "#F2B544", brightYellow: "#F6CB72", red: "#F0685A", brightRed: "#FF8A7D", white: "#C9CDD2", brightWhite: "#FFFFFF" } });
+    fit = new FitAddon.FitAddon(); term.loadAddon(fit);
+    term.onData(d => { if (ws && ws.readyState === 1) ws.send(new TextEncoder().encode(d)); });
+    term.attachCustomKeyEventHandler(e => { if (e.type === "keydown" && e.key === "Escape" && e.shiftKey) { leaveTerm(); return false; } return true; });
+  }
+  const host = $("#xt"); if (term.element) host.appendChild(term.element); else term.open(host);
+  new ResizeObserver(refit).observe($("#termBox") || $("#xt"));
+  if (wsFor === id && ws && ws.readyState <= 1) { requestAnimationFrame(() => { refit(); term.focus(); }); return; }
+  disconnectTerm(); term.reset(); wsFor = id;
+  cover(`<div><i data-lucide="loader" class="ic"></i>Opening the session…</div>`);
+  const sock = new WebSocket(`ws://${location.host}/ws/term/${id}?t=${TOKEN}`); sock.binaryType = "arraybuffer"; ws = sock;
+  sock.onopen = () => { cover(null); requestAnimationFrame(() => { refit(); term.focus(); }); };
+  sock.onmessage = e => term.write(new Uint8Array(e.data));
+  sock.onclose = () => { if (sock !== ws) return; ws = null; if (opt.onClose) return opt.onClose(); cover(`<div>Session closed<button class="btn secondary" data-reconnect>Reconnect</button></div>`); };
+}
+function refit() { if (!term || !($("#termBox") || $("#xt"))) return; try { fit.fit(); } catch {} if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })); }
+function cover(h) { const c = $("#cover"); if (!c) return; if (h) { c.innerHTML = h; c.hidden = false; icons(); } else c.hidden = true; }
+function disconnectTerm() { if (ws) { const w = ws; ws = null; try { w.close(); } catch {} } wsFor = null; }
+function leaveTerm() { const c = cardOf(sel); if (c && c.col === "needs") { termView[c.id] = false; render(); } else term?.blur(); }
+const paste = t => ws && ws.readyState === 1 && ws.send(new TextEncoder().encode("\x1b[200~" + t + "\x1b[201~"));
+
+/* ---------- voice ---------- */
+let rec = null, recTarget = null, chunks = [];
+async function toggleVoice(target) {
+  if (rec && rec.state === "recording") { rec.stop(); return; }
+  if (!S.voice) return toast("Voice isn't set up on this machine.", true);
+  let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch { return toast("Microphone blocked. Allow it for this window and try again.", true); }
+  recTarget = target; chunks = [];
+  rec = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop()); setMic("busy"); note("Transcribing…");
+    try {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      if (blob.size < 2000) throw new Error("Didn't catch that — hold on a little longer.");
+      const { text } = await api("/api/voice", blob, "audio/webm");
+      if (!text) throw new Error("Didn't catch any words.");
+      deliver(recTarget, text);
+    } catch (e) { toast(e.message, true); }
+    finally { setMic(""); note(""); rec = null; }
+  };
+  rec.start(); setMic("rec"); note("Listening… press V or click the mic to stop");
+}
+function setMic(state) { document.querySelectorAll(`[data-mic]`).forEach(b => { b.classList.toggle("rec", state === "rec"); b.classList.toggle("busy", state === "busy"); }); }
+function note(t) { const n = $("#vnote"); if (n) { n.textContent = t; n.hidden = !t; } }
+function deliver(target, text) {
+  const go = /[,.]?\s*(start it|send it|go ahead and send( it)?)[.!]?$/i;
+  const auto = go.test(text); if (auto) text = text.replace(go, "").trim();
+  if (target === "term") { paste(text); term?.focus(); return; }
+  const el = $("#" + target); if (!el) return;
+  el.value = (el.value.trim() ? el.value.trimEnd() + " " : "") + text; el.dispatchEvent(new Event("input", { bubbles: true })); grow(el); el.focus();
+  if (auto) { if (target === "nprompt") submitNew(true); else if (target === "reply") sendReply(); else if (target === "tprompt") $("[data-start]")?.click(); }
+}
+function voiceTarget() { if (sel === "new") return "nprompt"; if ($("#reply")) return "reply"; if ($("#tprompt")) return "tprompt"; if ($("#xt")) return "term"; return null; }
+
+/* ---------- actions ---------- */
+async function sendReply(text) {
+  const c = cardOf(sel); const box = $("#reply"); text = (text ?? box?.value ?? "").trim(); if (!c || !text) return;
+  // Optimistic: clear now (sending takes a few seconds), put the text back if it fails.
+  drafts[c.id] = ""; if (box) { box.value = ""; grow(box); }
+  toast(`Sending to ${c.name}…`);
+  const r = await act(c.id, "reply", { text }, true);
+  if (!r) { drafts[c.id] = text; const b2 = $("#reply"); if (b2 && sel === c.id) { b2.value = text; grow(b2); } return; }
+  toast(`Sent to ${c.name}`);
+  if (sel === c.id) { const next = needsList().find(x => x.id !== c.id); if (next) setSel(next.id); }
+}
+async function submitNew(start) {
+  const prompt = $("#nprompt").value.trim(), cwd = $("#ndir").value.trim();
+  if (!prompt) { $("#nerr").textContent = start ? "Say or write what it should do." : "Write something to save."; $("#nprompt").focus(); return; }
+  if (!cwd) { $("#nerr").textContent = "Pick the project folder it works in."; $("#ndir").focus(); return; }
+  const b = $(start ? "#nStart" : "#nTodo"); b.disabled = true;
+  try {
+    const r = await api("/api/cards", { prompt, cwd, account: newAcct, start, title: "" });
+    store.set("loft.dir." + newAcct, cwd); drafts.new = ""; toast(r.message);
+    const m = /started ([0-9a-f]{8})/.exec(r.message || ""); if (m) return waitOpen(m[1]);
+    setSel(null);
+  } catch (e) { $("#nerr").textContent = e.message; } finally { b.disabled = false; }
+}
+async function waitOpen(id) { for (let i = 0; i < 12 && !cardOf(id); i++) { try { S = await api("/api/state"); } catch {} await new Promise(r => setTimeout(r, 400)); } setSel(id); }
+function openMenu(btn) {
+  const c = cardOf(sel); if (!c) return; const m = $("#menu"), running = c.col === "running", todo = c.kind === "todo";
+  m.innerHTML = `${!todo ? `<button data-do="pin"><i data-lucide="${c.pinned ? "pin-off" : "pin"}" class="ic"></i>${c.pinned ? "Unpin" : "Pin to top"}</button>` : ""}
+    ${(S.accounts || []).filter(a => a.id !== c.account).map(a => `<button data-do="account" data-to="${esc(a.id)}" ${running ? "disabled title='Stop it first'" : `title="${esc(accTitle(a))}"`}><span class="dot" style="margin:0 4px;background:${a.hex}"></span>Move to ${esc(a.label)}</button>`).join("")}
+    ${!todo ? `<button data-do="open"><i data-lucide="app-window" class="ic"></i>Open in terminal</button>` : ""}
+    ${running ? `<button data-do="stop"><i data-lucide="square" class="ic"></i>Stop</button>` : ""}
+    <hr><button class="danger" data-do="archive" ${running ? "disabled title='Stop it first'" : ""}><i data-lucide="${todo ? "trash-2" : "archive"}" class="ic"></i><span>${todo ? "Delete" : "Archive"}</span></button>`;
+  const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = (innerWidth - r.right) + "px"; m.hidden = false; icons();
+}
+const closeMenu = () => { $("#menu").hidden = true; };
+
+/* ---------- render ---------- */
+function render() { renderInbox(); renderBoard(); renderPane(); const n = S.cards.filter(c => c.col === "needs").length; document.title = n ? `(${n}) loft` : "loft"; }
+function notifyNew() {
+  const now = new Set(S.cards.filter(c => c.col === "needs").map(c => c.id));
+  if (prevNeeds && "Notification" in window && Notification.permission === "granted")
+    for (const id of now) if (!prevNeeds.has(id)) { const c = cardOf(id); const n = new Notification(`${accOf(c).label} · ${c.name}`, { body: c.detail || "Needs you", tag: id }); n.onclick = () => { window.focus(); setSel(id); }; }
+  prevNeeds = now;
+}
+function move(dir) {
+  const ids = [...document.querySelectorAll("#list .item")].map(e => e.dataset.id); if (!ids.length) return;
+  let i = ids.indexOf(sel); i = i < 0 ? 0 : Math.max(0, Math.min(ids.length - 1, i + dir)); setSel(ids[i]);
+  document.querySelector(`#list [data-id="${ids[i]}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", async e => {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+  if (!e.target.closest("#menu") && !e.target.closest("[data-menu]")) closeMenu();
+  const t = e.target.closest("button, .item, .bcard"); if (!t) return;
+  if (t.matches(".item, .bcard")) return setSel(t.dataset.id);
+  if (t.hasAttribute("data-accounts")) { AC = null; return setSel("accounts"); }
+  if (t.closest(".accts") && !t.hasAttribute("data-back")) return accountsClick(t);
+  if (t.dataset.view) return setView(t.dataset.view);
+  if (t.dataset.acct !== undefined) { acct = t.dataset.acct; store.set("loft.acct", acct); return render(); }
+  if (["newBtn", "newBtn2", "newBtn3", "newBtn4"].includes(t.id)) return setSel("new");
+  if (t.hasAttribute("data-back")) return setSel(null);
+  if (t.hasAttribute("data-toggle-done")) { showDone = !showDone; renderInbox(); return renderBoard(); }
+  if (t.hasAttribute("data-toggle-term")) { const c = cardOf(sel); if (c?.col === "needs") { drafts[c.id] = $("#reply")?.value || ""; termView[c.id] = !termView[c.id]; render(); } return; }
+  if (t.hasAttribute("data-quick")) return sendReply(t.dataset.quick);
+  if (t.hasAttribute("data-send")) return sendReply();
+  if (t.dataset.mic) return toggleVoice(t.dataset.mic);
+  if (t.hasAttribute("data-reconnect")) { wsFor = null; ws = null; return mountTerm(sel); }
+  if (t.hasAttribute("data-menu")) return $("#menu").hidden ? openMenu(t) : closeMenu();
+  if (t.dataset.newacct) { drafts.new = $("#nprompt").value; newAcct = t.dataset.newacct; store.set("loft.newAcct", newAcct); $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.id === "nStart") return submitNew(true);
+  if (t.id === "nTodo") return submitNew(false);
+  if (t.hasAttribute("data-start")) { const p = $("#tprompt").value.trim(); if (!p) { toast("Write or say the prompt first.", true); return; } t.disabled = true; const r = await act(sel, "start", { prompt: p }); t.disabled = false; const m = /started ([0-9a-f]{8})/.exec(r?.message || ""); if (m) waitOpen(m[1]); return; }
+  if (t.dataset.do) {
+    const a = t.dataset.do;
+    if (a === "archive" && !t.classList.contains("armed")) { t.classList.add("armed"); t.querySelector("span").textContent = "Click again to confirm"; return; }
+    closeMenu(); const id = sel; const r = await act(id, a, t.dataset.to ? { account: t.dataset.to } : {}); if (r && a === "archive") setSel(null); else { $("#pane").dataset.key = ""; render(); }
+  }
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "reply") { drafts[sel] = e.target.value; grow(e.target); }
+  if (e.target.id === "nprompt") drafts.new = e.target.value;
+});
+document.addEventListener("focusout", e => {
+  if (e.target.dataset?.rename) { const a = AC?.accounts.find(x => x.id === e.target.dataset.rename), v = e.target.value.trim(); if (a && v && v !== a.label) accAct(a.id, "rename", { label: v }); else if (a) e.target.value = a.label; return; }
+  const c = cardOf(sel);
+  if (e.target.id === "title" && c) { const v = e.target.value.trim(); if (v && v !== c.name) act(c.id, "rename", { name: v }); else e.target.value = c.name; }
+  if (e.target.id === "tprompt" && c?.kind === "todo") { const v = e.target.value.trim(); if (v !== (noPrompt(c) ? "" : c.detail)) api(`/api/cards/${c.id}/prompt`, { prompt: v }).catch(() => {}); }
+});
+document.addEventListener("keydown", e => {
+  const ae = document.activeElement, inTerm = ae?.closest?.(".xterm");
+  if (inTerm) return;                                  // the terminal owns the keyboard (Shift+Esc leaves)
+  const typing = /INPUT|TEXTAREA/.test(ae?.tagName);
+  if (ae?.id === "reply" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return sendReply(); }
+  if (ae?.id === "nprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return submitNew(true); }
+  if (ae?.id === "tprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $("[data-start]")?.click(); }
+  if (ae?.id === "title" && e.key === "Enter") return ae.blur();
+  if (ae?.dataset?.rename && e.key === "Enter") return ae.blur();
+  if (ae?.id === "aname" && e.key === "Enter") return $("[data-addgo]")?.click();
+  if (e.key === "Escape") { if (!$("#menu").hidden) return closeMenu(); if (rec?.state === "recording") return rec.stop(); if (typing && ae.id !== "reply") return ae.blur();
+    if (sel === "setup") return;
+    if (sel === "new" || sel === "accounts" || (view === "board" && sel)) { if (sel === "accounts") { loginFor = null; loginEnded = false; adding = false; } const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
+  if (ae?.matches?.("#cols .bcard") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); return setSel(ae.dataset.id); }
+  // V speaks — also while the reply box is empty and focused
+  if ((e.key === "v" || e.key === "V") && !e.ctrlKey && !e.metaKey && !e.altKey && (!typing || (ae.id === "reply" && !ae.value) || (ae.id === "nprompt" && !ae.value))) { const tg = voiceTarget(); if (tg) { e.preventDefault(); return toggleVoice(tg); } }
+  if (typing && !((ae.id === "reply" || ae.id === "nprompt") && !ae.value)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "n" && sel !== "setup") { e.preventDefault(); setSel("new"); }
+  else if (e.key === "," && sel !== "setup") { e.preventDefault(); AC = null; setSel("accounts"); }
+  else if (e.key === "b") { e.preventDefault(); setView(view === "board" ? "inbox" : "board"); }
+  else if (view === "board" && /^[jkhls]$|^Arrow/.test(e.key)) {
+    e.preventDefault(); if (e.key === "s") return startTodo(sel);
+    const d = { j: [1, 0], ArrowDown: [1, 0], k: [-1, 0], ArrowUp: [-1, 0], h: [0, -1], ArrowLeft: [0, -1], l: [0, 1], ArrowRight: [0, 1] }[e.key]; if (d) boardMove(...d);
+  }
+  else if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
+  else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+  else if (e.key === "t") { const c = cardOf(sel); if (c?.col === "needs") { e.preventDefault(); termView[c.id] = !termView[c.id]; render(); } else if (term) { e.preventDefault(); term.focus(); } }
+});
+
+/* ---------- drag a todo to Working = start ---------- */
+const workCol = () => document.querySelector('#cols .bcol[data-col="running"]');
+function clearDrop() { const w = workCol(); w?.classList.remove("drop"); w?.querySelector(".slot")?.remove(); document.querySelector(".bcard.dragging")?.classList.remove("dragging"); }
+document.addEventListener("dragstart", e => {
+  const el = e.target.closest?.("#cols .bcard[draggable]"); if (!el) return;
+  dragId = el.dataset.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragId);
+  requestAnimationFrame(() => el.classList.add("dragging"));
+});
+document.addEventListener("dragover", e => {
+  if (!dragId) return; const over = e.target.closest?.('.bcol[data-col="running"]'), w = workCol();
+  if (over) { e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    if (!w.classList.contains("drop")) { const c = cardOf(dragId); w.classList.add("drop");
+      w.querySelector(".bh").insertAdjacentHTML("afterend", `<div class="slot"><i data-lucide="play" class="ic"></i>Drop to start on ${esc(c ? accOf(c).label : "")}</div>`); icons(); } }
+  else if (w?.classList.contains("drop")) { w.classList.remove("drop"); w.querySelector(".slot")?.remove(); }
+});
+document.addEventListener("drop", e => {
+  if (!dragId) return; const ok = e.target.closest?.('.bcol[data-col="running"]'); e.preventDefault();
+  const id = dragId; dragId = null; clearDrop(); if (ok) startTodo(id); else if (boardStale) renderBoard();
+});
+document.addEventListener("dragend", () => { if (!dragId) return; dragId = null; clearDrop(); if (boardStale) renderBoard(); });
+
+/* ---------- live data ---------- */
+function apply(s) { S = s; loaded = true; notifyNew(); render(); }
+api("/api/state").then(apply).catch(e => toast(e.message, true));
+if (!new URL(location.href).searchParams.has("nosse")) { const es = new EventSource(`/api/events?t=${TOKEN}`); es.onmessage = m => apply(JSON.parse(m.data)); }
+setInterval(() => { if (loaded) { renderInbox(); renderBoard(); } }, 30000);
+</script>
+</body>
+</html>
