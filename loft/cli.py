@@ -367,6 +367,10 @@ LINUX_BROWSERS = ["google-chrome", "google-chrome-stable", "chromium", "chromium
 def open_window(url):
     profile = os.environ.get("LOFT_CHROME_PROFILE") or str(paths.data_dir() / "chrome")
     if paths.is_mac():
+        native = paths.HOME / "Applications/Loft.app/Contents/MacOS/Loft"
+        if native.exists():  # built by install.sh from macos/Loft.swift
+            subprocess.Popen(["open", "-a", str(native.parents[2])])
+            return "Loft.app"
         for app in MAC_BROWSERS:
             if any(Path(base, f"{app}.app").exists() for base in ("/Applications", str(paths.HOME / "Applications"))):
                 subprocess.Popen(["open", "-na", app, "--args", f"--app={url}", f"--user-data-dir={profile}"])
