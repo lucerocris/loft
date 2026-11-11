@@ -11,7 +11,7 @@ Binds 127.0.0.1 only. Every API call must carry the per-run token that is baked
 into the served page (X-Cagents-Token), so other sites in the browser can't
 drive it.
 """
-import hashlib, importlib.machinery, importlib.util, json, os, secrets, subprocess, sys, threading, time
+import base64, fcntl, pty, select, signal, struct, termios, hashlib, importlib.machinery, importlib.util, json, os, secrets, subprocess, sys, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
@@ -186,7 +186,7 @@ class H(BaseHTTPRequestHandler):
         if not tok:  # EventSource can't send headers; it passes ?t= (GET /api/events only)
             from urllib.parse import parse_qs
             u = urlparse(self.path)
-            if u.path == "/api/events":
+            if u.path == "/api/events" or u.path.startswith("/ws/term/"):
                 tok = (parse_qs(u.query).get("t") or [""])[0]
         return secrets.compare_digest(tok, TOKEN)
 
@@ -195,6 +195,8 @@ class H(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             html = (HERE / "index.html").read_text().replace("__CAGENTS_TOKEN__", TOKEN)
             return self._send(200, html.encode(), "text/html; charset=utf-8")
+        if path == "/favicon.ico":
+            self.send_response(204); self.end_headers(); return
         if path.startswith("/static/"):
             f = (HERE / path.lstrip("/")).resolve()
             if HERE in f.parents and f.is_file():
@@ -210,6 +212,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, timeline(path.rsplit("/", 1)[-1]))
         if path == "/api/events":
             return self.events()
+        if path.startswith("/ws/term/"):
+            return self.term_ws(path.rsplit("/", 1)[-1])
         return self._send(404, {"error": "not found"})
 
     def events(self):
@@ -232,6 +236,123 @@ class H(BaseHTTPRequestHandler):
                 time.sleep(2)
         except (BrokenPipeError, ConnectionResetError):
             return
+
+    # ------------------------------------------------------------ embedded terminal
+    # A minimal RFC 6455 WebSocket that bridges xterm.js to `claude attach <id>`
+    # running in a pty with the agent's own account login. Closing it only
+    # detaches; the agent keeps running in the daemon.
+    def _ws_send(self, op, data, lock):
+        n = len(data)
+        head = bytes([0x80 | op])
+        if n < 126:
+            head += bytes([n])
+        elif n < 65536:
+            head += bytes([126]) + struct.pack(">H", n)
+        else:
+            head += bytes([127]) + struct.pack(">Q", n)
+        with lock:
+            self.connection.sendall(head + data)
+
+    def _ws_read(self):
+        h = self.rfile.read(2)
+        if len(h) < 2:
+            return None, None
+        op, n, masked = h[0] & 0x0F, h[1] & 0x7F, h[1] & 0x80
+        if n == 126:
+            n = struct.unpack(">H", self.rfile.read(2))[0]
+        elif n == 127:
+            n = struct.unpack(">Q", self.rfile.read(8))[0]
+        mask = self.rfile.read(4) if masked else b""
+        data = self.rfile.read(n)
+        if masked:
+            m = (mask * (n // 4 + 1))[:n]
+            data = (int.from_bytes(data, "big") ^ int.from_bytes(m, "big")).to_bytes(n, "big") if n else b""
+        return op, data
+
+    def term_ws(self, cid):
+        key = self.headers.get("Sec-WebSocket-Key")
+        card = find_card(cid)
+        if not key or not card or card["kind"] != "agent":
+            return self._send(404, {"error": "no such agent"})
+        accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+        env = B.account_env(card["work"])
+        env.update(TERM="xterm-256color", COLORTERM="truecolor")
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                os.chdir(str(HOME))
+                os.execvpe(CLAUDE, [CLAUDE, "attach", cid], env)
+            finally:
+                os._exit(127)
+        lock = threading.Lock()
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+
+        def pump():
+            try:
+                while True:
+                    r, _, _ = select.select([fd], [], [], 1.0)
+                    if fd in r:
+                        data = os.read(fd, 65536)
+                        if not data:
+                            break
+                        self._ws_send(2, data, lock)
+            except OSError:
+                pass
+            try:
+                self._ws_send(8, b"", lock)
+            except OSError:
+                pass
+
+        t = threading.Thread(target=pump, daemon=True)
+        t.start()
+        try:
+            while True:
+                op, data = self._ws_read()
+                if op is None or op == 8:
+                    break
+                if op == 9:
+                    self._ws_send(10, data, lock)
+                elif op == 2:
+                    os.write(fd, data)
+                elif op == 1:
+                    try:
+                        msg = json.loads(data)
+                    except Exception:
+                        continue
+                    if msg.get("type") == "resize":
+                        rows, cols = int(msg.get("rows") or 40), int(msg.get("cols") or 120)
+                        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+                    elif msg.get("type") == "input":
+                        os.write(fd, msg.get("data", "").encode())
+        except (OSError, ConnectionError):
+            pass
+        finally:
+            try:
+                os.kill(pid, signal.SIGHUP)
+            except OSError:
+                pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            for _ in range(20):
+                try:
+                    if os.waitpid(pid, os.WNOHANG)[0]:
+                        break
+                except ChildProcessError:
+                    break
+                time.sleep(0.05)
+            else:
+                try:
+                    os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
+                except OSError:
+                    pass
 
     def do_POST(self):
         if not self._authed():
