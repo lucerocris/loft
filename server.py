@@ -25,7 +25,8 @@ access" switch turns it on and the choice is remembered in
 --dev-loopback-devices (OFF by default) also accepts device tokens on
 127.0.0.1, so an Android emulator can reach the server through 10.0.2.2.
 """
-import base64, fcntl, ipaddress, pty, select, signal, socket, struct, termios, hashlib, importlib.machinery, importlib.util, json, os, secrets, subprocess, sys, threading, time
+import base64, fcntl, ipaddress, pty, select, signal, socket, struct, termios, hashlib, importlib.machinery, importlib.util, json, os, secrets, shutil, subprocess, sys, threading, time
+from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
@@ -559,7 +560,8 @@ def switch_route(card, body):
 
 
 def pending_loop(every=3.0):
-    """Apply queued account switches once their agent leaves Working."""
+    """Apply queued account switches once their agent leaves Working, then send queued
+    prompts and start queued todos that can go now."""
     while True:
         time.sleep(every)
         try:
@@ -567,6 +569,77 @@ def pending_loop(every=3.0):
                 B.apply_pending(log=lambda m: print(m, flush=True))
         except Exception as e:
             print(f"pending switch loop: {type(e).__name__}: {e}", flush=True)
+        try:
+            run_queue()
+        except Exception as e:
+            print(f"prompt queue loop: {type(e).__name__}: {e}", flush=True)
+
+
+def run_queue():
+    with LOCK:
+        due = B.queue_due()
+    for kind, x, item in due:    # sending takes seconds: outside the lock so the app stays responsive
+        try:
+            if kind == "send":
+                send_to_agent(x, item["text"])
+                print(f"queue: sent to {x['id']}", flush=True)
+            else:
+                jid, msg = B.launch_todo(x)
+                if not jid:
+                    raise RuntimeError(msg)
+                print(f"queue: started todo {x['id']} as {jid}", flush=True)
+        except Exception as e:
+            print(f"queue: {kind} {x['id']} failed: {e}", flush=True)
+            with LOCK:
+                B.queue_failed(kind, x, item, str(e))
+    Awake.hold(B.queue_pending())
+
+
+class Awake:
+    """Keeps the machine from idle-sleeping while prompts wait, so they go out at the
+    reset. macOS: caffeinate (-s holds only on AC power; tied to this server's pid).
+    Linux: systemd-inhibit, also ended when this server exits. A closed lid on battery
+    still sleeps; what is due then goes out on the next wake."""
+    proc = None
+
+    @classmethod
+    def hold(cls, on):
+        alive = cls.proc is not None and cls.proc.poll() is None
+        if on == alive:
+            return
+        if not on:
+            cls.proc.terminate(); cls.proc = None
+            return
+        pid = str(os.getpid())
+        if sys.platform == "darwin":
+            cmd = ["caffeinate", "-i", "-s", "-w", pid]
+        elif shutil.which("systemd-inhibit"):
+            cmd = ["systemd-inhibit", "--what=idle:sleep", "--who=Loft", "--why=Prompts are queued",
+                   "tail", f"--pid={pid}", "-f", "/dev/null"]
+        else:
+            return
+        try:
+            cls.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            cls.proc = None
+
+
+def at_time(iso):
+    """'3:40 PM' today, 'Fri 3:40 PM' otherwise (local time)."""
+    t = datetime.fromisoformat(iso).astimezone()
+    hm = t.strftime("%I:%M %p").lstrip("0")
+    return hm if t.date() == datetime.now().astimezone().date() else t.strftime("%a ") + hm
+
+
+def queued_msg(until, n=1):
+    """until: B.limit_until's answer (None = not limited, so it waits for the turn)."""
+    if until is None:
+        when = "sends after this turn"
+    elif until:
+        when = f"sends when the limit resets at {at_time(until)}"
+    else:
+        when = "sends when the limit resets"
+    return f"Queued ({n} waiting): {when}" if n > 1 else f"Queued: {when}"
 
 
 def act(cid, action, body):
@@ -615,6 +688,15 @@ def act(cid, action, body):
             todo["prompt"] = body["prompt"].strip()
         if not todo.get("prompt"):
             return 400, "Write a prompt to start it with."
+        until = B.limit_until(B.todo_account(todo, A.load())["id"])
+        if until is not None:      # at its limit: the poll loop starts it after the reset
+            todos = B.load_todos()
+            for t in todos:
+                if t["id"] == cid:
+                    t.update(prompt=todo["prompt"], queued=True)
+            B.save_todos(todos)
+            Awake.hold(True)
+            return 200, f"Starts when the limit resets{' at ' + at_time(until) if until else ''}"
         jid, msg = B.launch_todo(todo)
         if not jid:
             return 500, msg
@@ -656,7 +738,22 @@ def act(cid, action, body):
             return 400, "Write or say a reply first."
         if card["kind"] == "todo":
             return 400, "Start it first."
+        until = B.limit_until(card.get("account"))
+        if body.get("queue") or until is not None or B.busy(card) or B.queue_read(card["id"])["items"]:
+            n = B.queue_add(card["id"], text)   # behind anything already waiting, to keep the order
+            Awake.hold(True)
+            return 200, queued_msg(until, n)
         return 200, send_to_agent(card, text)
+    if action == "queue":   # {item: id} removes one queued prompt, {} clears them; a todo is unscheduled
+        if card["kind"] == "todo":
+            todos = B.load_todos()
+            for t in todos:
+                if t["id"] == cid:
+                    t["queued"] = False
+            B.save_todos(todos)
+            return 200, "Won't start by itself"
+        gone = B.queue_remove(cid, body.get("item"))
+        return 200, ("Removed" if body.get("item") else "Queue cleared") if gone else "Nothing to remove"
     if action == "prompt" and card["kind"] == "todo":
         todos = B.load_todos()
         for t in todos:

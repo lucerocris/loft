@@ -116,6 +116,20 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .cover { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15,16,18,.92); color: var(--t2); z-index: 2; }
 .cover > div { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .tmic { position: absolute; right: 22px; bottom: 16px; z-index: 3; background: var(--raised); border: 1px solid var(--border-strong); }
+/* prompt queue: waits for the turn, or for the account's limit to reset */
+.qwrap { padding: 8px 32px 4px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.qwrap:empty { display: none; }
+.qwrap .composer { padding: 4px 4px 4px 12px; }
+.qlist { display: flex; flex-direction: column; gap: 4px; width: min(100%, 680px); }
+.qlist .qh { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 500; color: var(--t3); }
+.qlist .qh button { margin-left: auto; border: 0; background: none; color: var(--t3); font-size: 11px; cursor: pointer; padding: 0; }
+.qlist .qh button:hover { color: var(--t1); }
+.qi { display: flex; align-items: flex-start; gap: 8px; padding: 6px 4px 6px 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-sm); font-size: 13px; color: var(--t2); }
+.qi .n { font: 11px var(--mono); color: var(--t3); padding-top: 2px; }
+.qi .tx { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.qi .er { display: block; color: var(--failed); font-size: 11px; }
+.qi button { width: 20px; height: 20px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--t3); cursor: pointer; padding: 0; flex: none; }
+.qi button:hover { background: var(--selected); color: var(--t1); } .qi button .ic { width: 12px; height: 12px; }
 .tbar { display: flex; gap: 14px; white-space: nowrap; overflow: hidden; padding: 8px 32px 12px; font: 11px var(--mono); color: var(--t3); border-top: 1px solid var(--border); }
 
 /* new task */
@@ -643,7 +657,7 @@ function renderBoard() {
     return `<div class="bcard ${s}${startingIds.has(c.id) ? " starting" : ""}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}"${todo ? ` draggable="true" title="Drag to Working to start"` : ""}>
       <div class="r1"><span class="t">${esc(c.name)}</span><span class="age">${ago(c.updated)}</span></div>
       <div class="s">${esc(s === "failed" && !/^failed/i.test(st) ? "Failed · " + st : st)}</div>
-      <div class="m">${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}${pj && gb() !== "project" ? pdotH(pj) : ""}<span class="f">${esc(proj)}</span>${live}</div>${pendingBadge(c)}</div>`;
+      <div class="m">${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}${pj && gb() !== "project" ? pdotH(pj) : ""}<span class="f">${esc(proj)}</span>${live}</div>${pendingBadge(c)}${queueBadge(c)}</div>`;
   };
   const g = gb();
   $("#cols").classList.toggle("laned", LANED.includes(g));
@@ -728,7 +742,7 @@ function head(c, actions = true) {
   const proj = c.folderName === "~" ? "home" : c.folderName;
   return `<div class="head"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
     <div class="ti"><label class="sr-only" hidden for="title">Name</label><input class="title" id="title" value="${esc(c.name)}" spellcheck="false" title="Click to rename">
-    <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span></div></div>
+    <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span id="qbadge">${queueBadge(c)}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span></div></div>
     ${actions && c.col === "needs" ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
     <button class="ibtn" data-menu aria-label="More actions" title="More"><i data-lucide="ellipsis" class="ic"></i></button></div>`;
 }
@@ -741,7 +755,7 @@ function paneAsk(p, c) {
       <div class="chips"><button class="btn secondary" data-quick="Yes, go ahead.">Yes, go ahead</button><button class="btn secondary" data-quick="No — stop there and wait.">No, stop there</button><button class="btn secondary" data-quick="Explain that in more detail first.">Explain more</button></div>
     </div>
     <div class="col"><div class="peek"><div class="ph"><i data-lucide="square-terminal" class="ic"></i>Earlier<button data-toggle-term>Open terminal  t</button></div><div id="peek"><div class="ln">…</div></div></div></div></div>
-    <div class="foot"><div class="composer"><textarea id="reply" rows="1" placeholder="Reply to ${esc(c.name)}…">${esc(drafts[c.id] || "")}</textarea>${micBtn("reply")}<button class="send" data-send aria-label="Send" title="Send (Enter)"><i data-lucide="corner-down-left" class="ic"></i></button></div>
+    <div class="foot"><div class="qlist" id="qlist" style="margin-bottom:8px">${queueList(c)}</div><div class="composer"><textarea id="reply" rows="1" placeholder="Reply to ${esc(c.name)}…">${esc(drafts[c.id] || "")}</textarea>${micBtn("reply")}<button class="send" data-send aria-label="Send" title="Send (Enter)"><i data-lucide="corner-down-left" class="ic"></i></button></div>
     <div class="hint">Enter sends to the agent · Shift+Enter new line · ${S.voice ? "V to speak · " : ""}J/K next agent</div><div class="voice-note" id="vnote" hidden></div></div>`;
   icons(); grow($("#reply")); loadPeek(c); setTimeout(() => $("#reply")?.focus(), 0);
 }
@@ -754,6 +768,8 @@ async function loadPeek(c) {
 }
 function paneTerm(p, c) {
   p.innerHTML = `${head(c)}<div class="term" id="termBox"><div id="xt"></div><div class="cover" id="cover" hidden></div>${S.voice ? `<button class="mic tmic" data-mic="term" title="Speak into the terminal (V)" aria-label="Speak"><i data-lucide="mic" class="ic"></i></button>` : ""}</div>
+    <div class="qwrap"><div class="qlist" id="qlist">${queueList(c)}</div>
+      <div class="composer"><textarea id="qtext" rows="1" placeholder="Queue a prompt: it sends when ${esc(c.name)} is free and its account is under its limits">${esc(drafts["q" + c.id] || "")}</textarea><button class="send" data-qsend aria-label="Queue" title="Queue (Enter)"><i data-lucide="list-plus" class="ic"></i></button></div></div>
     <div class="tbar"><span ${accColor(c)}>${esc(accTitle(accOf(c)))}</span><span>type straight into the agent</span>${S.voice ? "<span>V speaks</span>" : ""}<span>Shift+Esc leaves the terminal</span></div>
     <div class="voice-note" id="vnote" hidden style="padding:0 32px 8px"></div>`;
   icons(); mountTerm(c.id);
@@ -803,6 +819,33 @@ function paneQuiet(p) {
 function refreshPane(c) {   // light update without rebuilding (keeps drafts, focus, terminal)
   const a = $("#agoLabel"); if (a) a.textContent = ago(c.updated);
   const q = $("#askText"); if (q && c.detail && q.textContent !== c.detail) q.textContent = c.detail;
+  const ql = $("#qlist"), qh = queueList(c); if (ql && ql.dataset.h !== qh) { ql.dataset.h = qh; ql.innerHTML = qh; icons(); }
+  const qb = $("#qbadge"), bh = queueBadge(c); if (qb && qb.dataset.h !== bh) { qb.dataset.h = bh; qb.innerHTML = bh; icons(); }
+}
+/* ---------- prompt queue ---------- */
+function atTime(iso) {
+  const t = new Date(iso), hm = t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return t.toDateString() === new Date().toDateString() ? hm : t.toLocaleDateString([], { weekday: "short" }) + " " + hm;
+}
+function queueBadge(c) {
+  const q = c.queue; if (!q) return "";
+  const n = q.items.length, err = q.items.some(i => i.error), a = accOf(c);
+  const when = q.until ? `at ${atTime(q.until)}` : "";
+  const label = c.kind === "todo" ? `Starts after reset ${when}` : `${n} queued${when ? " · " + when : ""}`;
+  const tip = err ? q.items.find(i => i.error).error : q.until ? `${a.label} is at its limit; resets ${atTime(q.until)}` : "Sends when this turn ends";
+  return `<span class="pbadge${err ? " err" : ""}" style="--ac:${a.hex}" title="${esc(tip)}"><i data-lucide="${q.until ? "clock" : "list-ordered"}" class="ic"></i><span class="lb">${esc(label.trim())}</span>${c.kind === "todo" ? `<button data-qclear="${esc(c.id)}" aria-label="Don't start it by itself" title="Cancel"><i data-lucide="x" class="ic"></i></button>` : ""}</span>`;
+}
+function queueList(c) {
+  const items = c.queue?.items || []; if (!items.length || c.kind === "todo") return "";
+  return `<div class="qh"><i data-lucide="${c.queue.until ? "clock" : "list-ordered"}" class="ic" style="width:12px;height:12px"></i>${c.queue.until ? `Waiting for the limit to reset at ${esc(atTime(c.queue.until))}` : "Sends after this turn, one at a time"}<button data-qclear="${esc(c.id)}">Clear all</button></div>` +
+    items.map((i, n) => `<div class="qi"><span class="n">${n + 1}</span><span class="tx">${esc(i.text)}${i.error ? `<span class="er">Couldn't send: ${esc(i.error)}</span>` : ""}</span><button data-qrm="${esc(i.id)}" aria-label="Remove from queue" title="Remove"><i data-lucide="x" class="ic"></i></button></div>`).join("");
+}
+async function queuePrompt() {
+  const c = cardOf(sel), box = $("#qtext"), text = (box?.value || "").trim(); if (!c || !text) return;
+  drafts["q" + c.id] = ""; box.value = ""; grow(box);
+  const r = await act(c.id, "reply", { text, queue: true }, true);
+  if (!r) { drafts["q" + c.id] = text; if ($("#qtext") && sel === c.id) $("#qtext").value = text; return; }
+  toast(r.message); try { apply(await api("/api/state")); } catch {}
 }
 function grow(t) { if (!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; }
 
@@ -962,6 +1005,7 @@ async function sendReply(text) {
   toast(`Sending to ${c.name}…`);
   const r = await act(c.id, "reply", { text }, true);
   if (!r) { drafts[c.id] = text; const b2 = $("#reply"); if (b2 && sel === c.id) { b2.value = text; grow(b2); } return; }
+  if (r.message !== "Sent") { toast(r.message); try { apply(await api("/api/state")); } catch {} return; }   // queued: stay on it
   toast(`Sent to ${c.name}`);
   if (sel === c.id) { const next = needsList().find(x => x.id !== c.id); if (next) setSel(next.id); }
 }
@@ -1247,6 +1291,8 @@ document.addEventListener("click", async e => {
   if (!e.target.closest("#menu") && !e.target.closest("[data-menu]") && !e.target.closest("[data-settings]") && !e.target.closest("[data-dd]")) closeMenu();
   if (POP && !e.target.closest("[data-accpop], [data-billsto]")) closePop();
   const t = e.target.closest("button, .item, .bcard"); if (!t || t.closest("#projDlg, #phoneDlg")) return;
+  if (t.dataset.qrm || t.dataset.qclear) { e.stopPropagation(); const id = t.dataset.qclear || sel; const r = await act(id, "queue", t.dataset.qrm ? { item: t.dataset.qrm } : {}, true); if (r) toast(r.message); try { apply(await api("/api/state")); } catch {} return; }
+  if (t.hasAttribute("data-qsend")) return queuePrompt();
   if (t.dataset.pcancel) { e.stopPropagation(); const r = await act(t.dataset.pcancel, "account", { cancel: true }, true); if (r) toast(r.message); try { apply(await api("/api/state")); } catch {} return; }
   if (t.dataset.accpop) { if (POP?.id === t.dataset.accpop) return closePop(); if ((S.accounts || []).length > 1) openPop(t.dataset.accpop, t); return; }
   if (t.hasAttribute("data-billsto")) { const id = sel; closeMenu(); return openPop(id, document.querySelector("[data-menu]") || t); }
@@ -1308,6 +1354,7 @@ document.addEventListener("keydown", e => {
   if (inTerm) return;                                  // the terminal owns the keyboard (Shift+Esc leaves)
   const typing = /INPUT|TEXTAREA/.test(ae?.tagName);
   if (ae?.id === "reply" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return sendReply(); }
+  if (ae?.id === "qtext" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return queuePrompt(); }
   if (ae?.id === "nprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return submitNew(true); }
   if (ae?.id === "tprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $("[data-start]")?.click(); }
   if (ae?.id === "title" && e.key === "Enter") return ae.blur();
