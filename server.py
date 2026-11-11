@@ -44,14 +44,15 @@ TOKEN = secrets.token_hex(16)
 CLAUDE = str(HOME / ".local/bin/claude")
 VERSION = "2.1"
 HOSTNAME = socket.gethostname().split(".")[0]
-CONF_DIR = Path(os.environ.get("LOFT_CONF_DIR") or HOME / ".config/loft")
+CONF_DIR = None  # set below from loft.paths (LOFT_CONF_DIR, XDG_CONFIG_HOME, ~/.config/loft)
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, board as B, core as C, paths, usage as U, webapi  # noqa: E402
+from loft import accounts as A, board as B, core as C, paths, projects as P, usage as U, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
+CONF_DIR = paths.config_dir()
 LOCK = threading.Lock()  # one mutating action at a time
 VENV_PY = paths.venv_python()
 
@@ -445,6 +446,12 @@ def snapshot():
     for c in cards:
         c["updated"] = c["updated"].isoformat() if c["updated"] else None
         c["cwd"] = c["cwd"].replace(str(HOME), "~")
+        c["folder"] = c["cwd"]
+    try:
+        pcfg = P.load()
+    except SystemExit:
+        pcfg = P.empty()
+    counts = P.count(cards)
     cfg = A.load()
     cfg["accounts"] = [a for a in cfg["accounts"] if not a.get("pending")]  # still signing in
     usage = {}  # keyed by account id; "five"/"seven" stay strings ("—" = unknown) as before
@@ -461,7 +468,61 @@ def snapshot():
         "dirs": [d.replace(str(HOME), "~") for d in B.recent_dirs()],
         "doneDays": C.DONE_DAYS,
         "voice": Voice.available(),
+        "projects": [P.public(p, counts) for p in pcfg["projects"]],
+        "unsorted": counts.get(None, {"total": 0, "needs": 0, "running": 0, "todo": 0, "done": 0}),
+        "groupBy": pcfg["view"]["groupBy"],
+        "organized": P.config_path().is_file(),
     }
+
+
+def new_task_account(explicit, proj):
+    """explicit account (id or "auto") > the project's default (auto = lowest 5h usage) > global default."""
+    return P.pick_account(explicit, proj, A.load(), U.get)
+
+
+def projects_route(method, parts, body):
+    """/api/projects[/<id>] and /api/view. Returns (status, payload)."""
+    try:
+        if parts == ["api", "view"] and method == "POST":
+            g = body.get("groupBy")
+            if g not in P.GROUP_BY:
+                return 400, {"message": "groupBy is one of " + ", ".join(P.GROUP_BY)}
+            with P.locked() as pcfg:
+                pcfg["view"]["groupBy"] = g
+            return 200, {"message": "Saved", "groupBy": g}
+        if parts == ["api", "projects"] and method == "POST":
+            with P.locked() as pcfg:
+                p = P.create(body, pcfg)
+            pub = P.public(P.get(p["id"]))
+            return 200, {**pub, "message": f"Created {p['name']}", "project": pub}
+        if parts == ["api", "projects", "from-folders"] and method == "POST":
+            made = []
+            with P.locked() as pcfg:
+                for f in body.get("folders") or []:
+                    full = os.path.expanduser(str(f))
+                    if not os.path.isabs(full) or P.folder_match(full, pcfg):
+                        continue
+                    name = Path(full).name or full
+                    if any(q["name"].lower() == name.lower() for q in pcfg["projects"]):
+                        name = f"{name} ({Path(full).parent.name})"
+                    made.append(P.create({"name": name, "folders": [full]}, pcfg)["name"])
+            n = len(made)
+            return 200, {"message": f"Created {n} project{'s' if n != 1 else ''}" if n else "Nothing new to create", "created": made}
+        if len(parts) == 3 and parts[:2] == ["api", "projects"]:
+            pid = parts[2]
+            with P.locked() as pcfg:
+                if method == "DELETE":
+                    ok = P.remove(pid, pcfg)
+                    return (200, {"message": "Project removed. Its agents are unsorted now."}) if ok else (404, {"message": "No such project"})
+                if method == "PATCH":
+                    P.update(pid, body, pcfg)
+            pub = P.public(P.get(pid))
+            return 200, {**pub, "message": "Saved", "project": pub}
+    except KeyError:
+        return 404, {"message": "No such project"}
+    except ValueError as e:
+        return 400, {"message": str(e)}
+    return 404, {"message": "not found"}
 
 
 def find_card(cid):
@@ -481,7 +542,12 @@ def open_terminal(card):
 def act(cid, action, body):
     """Run one card action. Returns (status, message)."""
     if action == "create":
-        cwd = (body.get("cwd") or "").strip()
+        proj = None
+        if body.get("project"):
+            proj = P.get(body["project"])
+            if not proj:
+                return 400, "That project is gone. Pick another one."
+        cwd = (body.get("cwd") or "").strip() or (proj["folders"][0] if proj and proj["folders"] else "")
         title = (body.get("title") or "").strip() or derive_title(body.get("prompt") or "")
         if not title:
             return 400, "Write what the agent should do."
@@ -489,10 +555,13 @@ def act(cid, action, body):
             return 400, "Pick a project folder that exists."
         if os.path.realpath(os.path.expanduser(cwd)) == str(HOME):
             return 400, "Pick a project folder: Claude won't start background agents in your home folder."
+        acc = new_task_account(body.get("account") or None, proj)
         todo = {"id": "t" + secrets.token_hex(4), "title": title,
-                "account": B.resolve_account(body.get("account") or None)["id"],
+                "account": acc["id"],
                 "cwd": cwd.replace(str(HOME), "~"), "prompt": (body.get("prompt") or "").strip(),
                 "created": B.now_utc().isoformat()}
+        if proj:
+            todo["project"] = proj["id"]
         if body.get("start"):
             if not todo["prompt"]:
                 return 400, "Write a prompt to start it with."
@@ -528,6 +597,20 @@ def act(cid, action, body):
         return 200, B.act_rename(card, name)
     if action == "account":
         return 200, B.act_switch_account(card, body.get("account"))
+    if action == "project":
+        pid = body.get("project") or None
+        with P.locked() as pcfg:
+            if pid and not P.get(pid, pcfg):
+                return 400, "That project is gone."
+            P.assign(cid, pid, pcfg)
+            name = P.get(pid, pcfg)["name"] if pid else None
+        if card["kind"] == "todo":   # a todo carries its project into the agent it becomes
+            todos = B.load_todos()
+            for t in todos:
+                if t["id"] == cid:
+                    t["project"] = pid
+            B.save_todos(todos)
+        return 200, f"Moved to {name}" if name else "Removed from its project"
     if action == "pin":
         return 200, B.act_pin(card)
     if action == "archive":
@@ -908,9 +991,25 @@ class H(BaseHTTPRequestHandler):
         if not self._authed():
             return self._send(403, {"error": "bad token"})
         parts = urlparse(self.path).path.strip("/").split("/")
+        if parts[:2] == ["api", "projects"]:
+            code, payload = projects_route("DELETE", parts, {})
+            return self._send(code, payload)
         if self._admin() and len(parts) == 3 and parts[:2] == ["api", "devices"]:
             ok = revoke_device(parts[2])
             return self._send(200 if ok else 404, {"message": "Revoked" if ok else "No such device"})
+        return self._send(404, {"error": "not found"})
+
+    def do_PATCH(self):
+        if not self._authed():
+            return self._send(403, {"error": "bad token"})
+        parts = urlparse(self.path).path.strip("/").split("/")
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        except Exception:
+            body = {}
+        if parts[:2] == ["api", "projects"]:
+            code, payload = projects_route("PATCH", parts, body)
+            return self._send(code, payload)
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -939,6 +1038,9 @@ class H(BaseHTTPRequestHandler):
                 if self._admin_post(parts, body):
                     return
             return self._send(404, {"error": "not found"})
+        if parts[:2] == ["api", "projects"] or parts == ["api", "view"]:
+            code, payload = projects_route("POST", parts, body)
+            return self._send(code, payload)
         if parts[:2] != ["api", "cards"]:
             return self._send(404, {"error": "not found"})
         cid, action = (None, "create") if len(parts) == 2 else (parts[2], parts[3] if len(parts) > 3 else "")
@@ -996,6 +1098,10 @@ class RemoteH(H):
     def do_DELETE(self):
         if self._gate():
             super().do_DELETE()
+
+    def do_PATCH(self):
+        if self._gate():
+            super().do_PATCH()
 
 
 def main():

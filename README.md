@@ -104,7 +104,25 @@ loft attach <name>   # open an agent in this terminal with its own account
 ```
 
 Keys in the app: `N` new task, `B` inbox/board, `J`/`K` move, `T` terminal, `V` speak,
-`,` accounts, `Esc` back.
+`,` accounts, `P` projects, `G` cycle Group by, `Esc` back.
+
+## Projects and grouping
+
+Group agents by status, account, project, folder or nothing. A project is a set of folders plus
+the accounts it may run on; an agent belongs to the project whose folder holds its cwd (longest
+match), unless you move it by hand. New tasks in a project use its default account, or `auto`
+(the allowed account with the most 5-hour usage left).
+
+```sh
+loft project add "Client A" --folder ~/code/client-a --account work --account personal --default auto
+loft project list
+loft project edit client-a --color green
+loft project assign <agent> client-a     # or "none" to clear
+loft project rm client-a
+loft view project                        # default Group by: status|account|project|folder|none
+```
+
+Projects live in `~/.config/loft/loft.json` next to `accounts.json`.
 
 ## Voice
 

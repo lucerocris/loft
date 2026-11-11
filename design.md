@@ -41,7 +41,7 @@ Radius 6 / 10 / 14. Borders only; the one shadow is on menus and dialogs. Lucide
 Live pulse dot and the recording mic only. Reduced motion: none.
 
 ## Voice
-Plain verbs: "Start", "Save to Todo", "Move to Work", "Archive", "Sign in", "Make default".
+Plain verbs: "Start", "Save to Todo", "Move to <account>", "Move to <project>", "Archive", "Sign in", "Make default".
 No emoji. Errors say what to do.
 
 ## Constraints
