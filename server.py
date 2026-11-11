@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cagents app server: a tiny localhost API + one HTML page for the agents board.
+"""Loft (was cagents) app server: a tiny localhost API + one HTML page for the agents board.
 
 Stdlib only. Reuses ~/.local/bin/cagents (accounts, organize) and
 ~/.local/share/cagents/board.py (cards, actions) so the TUI and the app share
@@ -35,6 +35,111 @@ C = _load("cagents_cli", HOME / ".local/bin/cagents")
 B = _load("cagents_board", HOME / ".local/share/cagents/board.py")
 B.C = C
 LOCK = threading.Lock()  # one mutating action at a time
+VENV_PY = HOME / ".local/share/loft/venv/bin/python"
+
+
+class Voice:
+    """Lazily started local Whisper worker (voice_worker.py in the loft venv)."""
+    proc = None
+    lock = threading.Lock()
+
+    @classmethod
+    def available(cls):
+        return VENV_PY.exists()
+
+    @classmethod
+    def transcribe(cls, audio, suffix=".webm"):
+        if not cls.available():
+            raise RuntimeError("Voice isn't set up: ~/.local/share/loft/venv is missing.")
+        import tempfile
+        with cls.lock:
+            if cls.proc is None or cls.proc.poll() is not None:
+                cls.proc = subprocess.Popen([str(VENV_PY), str(HERE / "voice_worker.py")], stdin=subprocess.PIPE,
+                                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+                ready = cls.proc.stdout.readline()
+                if not ready:
+                    cls.proc = None
+                    raise RuntimeError("The voice model failed to load.")
+            fd, path = tempfile.mkstemp(suffix=suffix, prefix="loft-voice-")
+            with os.fdopen(fd, "wb") as f:
+                f.write(audio)
+            cls.proc.stdin.write(path + "\n"); cls.proc.stdin.flush()
+            out = json.loads(cls.proc.stdout.readline() or '{"error": "voice worker stopped"}')
+        if "error" in out:
+            raise RuntimeError(out["error"])
+        return out["text"]
+
+
+def derive_title(prompt):
+    """A short card title from the first clause of the prompt."""
+    import re
+    first = re.split(r"(?<=[.!?\n])\s", prompt.strip(), maxsplit=1)[0].strip().rstrip(".!?")
+    first = re.sub(r"^(please|can you|could you|i want you to|go and)\s+", "", first, flags=re.I)
+    words = first.split()
+    title = " ".join(words[:7]) + ("…" if len(words) > 7 else "")
+    return title[:1].upper() + title[1:]
+
+
+def send_to_agent(card, text):
+    """Type text into a background agent's prompt and press Enter.
+
+    There is no `claude send`, so this attaches briefly in a hidden pty, pastes
+    the text (bracketed paste, so multi-line stays one message), presses Enter
+    and detaches. The session keeps running, exactly as after `claude attach`.
+    """
+    env = B.account_env(card["work"])
+    env.update(TERM="xterm-256color", COLORTERM="truecolor")
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(str(HOME))
+        os.execvpe(CLAUDE, [CLAUDE, "attach", card["id"]], env)
+    try:
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+
+        def drain(idle, limit):
+            got, start, last = 0, time.time(), time.time()
+            while time.time() - start < limit:
+                r, _, _ = select.select([fd], [], [], 0.1)
+                if r:
+                    try:
+                        chunk = os.read(fd, 65536)
+                    except OSError:
+                        return got
+                    if not chunk:
+                        return got
+                    got += len(chunk); last = time.time()
+                elif got and time.time() - last > idle:
+                    return got
+            return got
+
+        if not drain(1.2, 12):
+            raise RuntimeError("Couldn't open the agent's session.")
+        os.write(fd, b"\x1b[200~" + text.encode() + b"\x1b[201~")
+        time.sleep(0.4)
+        os.write(fd, b"\r")
+        drain(0.8, 3)
+    finally:
+        try:
+            os.kill(pid, signal.SIGHUP)
+        except OSError:
+            pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        for _ in range(20):
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0]:
+                    break
+            except ChildProcessError:
+                break
+            time.sleep(0.05)
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
+            except OSError:
+                pass
+    return "Sent"
 
 
 def timeline(jid, limit=40):
@@ -74,6 +179,7 @@ def snapshot():
         },
         "dirs": [d.replace(str(HOME), "~") for d in B.recent_dirs()],
         "doneDays": C.DONE_DAYS,
+        "voice": Voice.available(),
     }
 
 
@@ -101,9 +207,9 @@ def act(cid, action, body):
     """Run one card action. Returns (status, message)."""
     if action == "create":
         cwd = (body.get("cwd") or "").strip()
-        title = (body.get("title") or "").strip()
+        title = (body.get("title") or "").strip() or derive_title(body.get("prompt") or "")
         if not title:
-            return 400, "Give the task a title."
+            return 400, "Write what the agent should do."
         if not cwd or not os.path.isdir(os.path.expanduser(cwd)):
             return 400, "Pick a project folder that exists."
         if os.path.realpath(os.path.expanduser(cwd)) == str(HOME):
@@ -156,6 +262,13 @@ def act(cid, action, body):
                            env=B.account_env(card["work"]), cwd=str(HOME), timeout=60)
         out = (r.stdout + r.stderr).strip().splitlines()
         return 200, out[-1] if out else "Stopped"
+    if action == "reply":
+        text = (body.get("text") or "").strip()
+        if not text:
+            return 400, "Write or say a reply first."
+        if card["kind"] == "todo":
+            return 400, "Start it first."
+        return 200, send_to_agent(card, text)
     if action == "prompt" and card["kind"] == "todo":
         todos = B.load_todos()
         for t in todos:
@@ -358,6 +471,16 @@ class H(BaseHTTPRequestHandler):
         if not self._authed():
             return self._send(403, {"error": "bad token"})
         parts = urlparse(self.path).path.strip("/").split("/")  # api/cards/<id>/<action> | api/cards
+        if parts == ["api", "voice"]:
+            n = int(self.headers.get("Content-Length") or 0)
+            if not n or n > 25_000_000:
+                return self._send(400, {"message": "No audio received."})
+            audio = self.rfile.read(n)
+            ext = ".ogg" if "ogg" in (self.headers.get("Content-Type") or "") else ".webm"
+            try:
+                return self._send(200, {"text": Voice.transcribe(audio, ext)})
+            except Exception as e:
+                return self._send(500, {"message": str(e)})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         except Exception:
@@ -376,7 +499,7 @@ class H(BaseHTTPRequestHandler):
 def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     srv.daemon_threads = True
-    print(f"cagents on http://127.0.0.1:{PORT}", flush=True)
+    print(f"loft on http://127.0.0.1:{PORT}", flush=True)
     srv.serve_forever()
 
 
