@@ -38,7 +38,7 @@ def _arg(name, default=None):
 HOME = Path.home()
 HERE = Path(__file__).resolve().parent
 PORT = int(_arg("--port", 7717))
-PHONE_PORT = int(_arg("--phone-port", PORT))
+PHONE_PORT = int(_arg("--phone-port", PORT or 7717))
 DEV_LOOPBACK_DEVICES = "--dev-loopback-devices" in sys.argv
 TOKEN = secrets.token_hex(16)
 CLAUDE = str(HOME / ".local/bin/claude")
@@ -725,6 +725,7 @@ class H(BaseHTTPRequestHandler):
     def _ws_accept(self):
         key = self.headers.get("Sec-WebSocket-Key")
         accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        self.protocol_version = "HTTP/1.1"   # WebKit (desktop app, Safari) rejects an HTTP/1.0 101
         self.send_response(101)
         self.send_header("Upgrade", "websocket")
         self.send_header("Connection", "Upgrade")
@@ -1001,7 +1002,10 @@ class RemoteH(H):
 def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     srv.daemon_threads = True
-    print(f"loft on http://127.0.0.1:{PORT}", flush=True)
+    # --port 0 picks a free port; this line is the handshake the desktop app reads.
+    print(f"loft on http://127.0.0.1:{srv.server_address[1]}", flush=True)
+    if "--exit-with-stdin" in sys.argv:   # desktop app: exit when the parent goes away
+        threading.Thread(target=lambda: (sys.stdin.read(), os._exit(0)), daemon=True).start()
     if DEV_LOOPBACK_DEVICES:
         print("DEV: device tokens are accepted on 127.0.0.1 too (--dev-loopback-devices)", flush=True)
     on = load_config().get("phone", False)

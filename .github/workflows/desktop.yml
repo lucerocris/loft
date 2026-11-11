@@ -1,0 +1,84 @@
+name: desktop
+
+# Builds the Loft desktop app (Tauri). Push a tag like desktop-v2.1.0, or run it by hand.
+# macOS builds are unsigned for now. To sign and notarize, add these repository secrets and
+# uncomment the env block on the macOS step (TODO, needs the Apple Developer account):
+#   APPLE_CERTIFICATE            base64 of the "Developer ID Application" .p12
+#   APPLE_CERTIFICATE_PASSWORD   its export password
+#   APPLE_SIGNING_IDENTITY       e.g. "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID, APPLE_PASSWORD     Apple ID + app-specific password (for notarization)
+#   APPLE_TEAM_ID
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - name: Install the Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Build universal .dmg
+        working-directory: desktop
+        run: cargo tauri build --target universal-apple-darwin --bundles app,dmg
+        # env:
+        #   APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        #   APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        #   APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        #   APPLE_ID: ${{ secrets.APPLE_ID }}
+        #   APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loft-macos
+          path: desktop/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - name: Install the Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Build .deb, .rpm, .AppImage
+        working-directory: desktop
+        run: cargo tauri build --bundles deb,rpm,appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loft-linux
+          path: |
+            desktop/target/release/bundle/deb/*.deb
+            desktop/target/release/bundle/rpm/*.rpm
+            desktop/target/release/bundle/appimage/*.AppImage
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/target/release/bundle/deb/*.deb
+            desktop/target/release/bundle/rpm/*.rpm
+            desktop/target/release/bundle/appimage/*.AppImage

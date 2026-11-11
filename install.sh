@@ -60,27 +60,40 @@ if [ "$LAUNCHER" = 1 ]; then
       mkdir -p "$DATA/icons/hicolor/$size/apps"; cp "$f" "$DATA/icons/hicolor/$size/apps/loft.$ext"
     done
     mkdir -p "$DATA/applications"
-    cat > "$DATA/applications/loft.desktop" <<EOF
+    # the desktop app (rpm/deb: loft-desktop on PATH, or an AppImage in ~/Applications)
+    DESK="$(command -v loft-desktop || true)"
+    [ -n "$DESK" ] || DESK="$(ls "$HOME"/Applications/Loft*.AppImage 2>/dev/null | tail -1 || true)"
+    if [ -n "$DESK" ] && [ -f /usr/share/applications/Loft.desktop ]; then
+      # the rpm/deb ships its own launcher; don't add a second "Loft"
+      rm -f "$DATA/applications/loft.desktop"
+      ok "launcher: the Loft desktop app ($DESK)"
+    else
+      if [ -n "$DESK" ]; then EXEC="$DESK"; WMCLASS=loft-desktop; KIND="desktop app"
+      else EXEC="$REPO/bin/loft app --browser"; WMCLASS=loft; KIND="Chrome --app window; install the desktop app for a native one"; fi
+      cat > "$DATA/applications/loft.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Loft
 Comment=Claude Code background agents across your accounts
-Exec=$REPO/bin/loft app
+Exec=$EXEC
 Icon=loft
 Terminal=false
 Categories=Development;Utility;
-StartupWMClass=loft
+StartupWMClass=$WMCLASS
 EOF
+      ok "launcher: $DATA/applications/loft.desktop ($KIND)"
+    fi
     command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$DATA/applications" >/dev/null 2>&1 || true
     command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q "$DATA/icons/hicolor" >/dev/null 2>&1 || true
-    ok "launcher: $DATA/applications/loft.desktop"
   elif [ "$OS" = Darwin ]; then
     APP="$HOME/Applications/Loft.app"
-    if command -v osacompile >/dev/null 2>&1; then
+    if [ -x /Applications/Loft.app/Contents/MacOS/loft-desktop ] || [ -x "$APP/Contents/MacOS/loft-desktop" ]; then
+      ok "launcher: the Loft desktop app (Spotlight: Loft)"
+    elif command -v osacompile >/dev/null 2>&1; then
       mkdir -p "$HOME/Applications"
       rm -rf "$APP"
-      osacompile -o "$APP" -e "do shell script \"'$REPO/bin/loft' app >/dev/null 2>&1 &\""
-      ok "launcher: $APP (Spotlight: Loft)"
+      osacompile -o "$APP" -e "do shell script \"'$REPO/bin/loft' app --browser >/dev/null 2>&1 &\""
+      ok "launcher: $APP (Spotlight: Loft; Chrome --app window, the desktop .dmg replaces it)"
     else
       note "osacompile missing; open Loft with \`loft app\`"
     fi

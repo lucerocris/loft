@@ -1,7 +1,8 @@
 """loft - one window for Claude Code background agents across any number of accounts.
 
   loft                      terminal board (in a terminal); `loft app` opens the window
-  loft app                  open the Loft window (starts the local server if needed)
+  loft app                  open the Loft window (the desktop app when installed,
+                            else a Chrome --app window; --browser forces the latter)
   loft serve [--port N]     run the server in the foreground (127.0.0.1 only)
   loft setup                first-run wizard: accounts, cswap import, open the app
   loft doctor               check claude, every account's login, the daemon, voice
@@ -382,8 +383,34 @@ def open_window(url):
     return "default browser"
 
 
+def desktop_app():
+    """The installed Loft desktop app (Tauri), if any: a command to launch it."""
+    if os.environ.get("LOFT_DESKTOP"):
+        return [os.environ["LOFT_DESKTOP"]]
+    if paths.is_mac():
+        for base in ("/Applications", str(paths.HOME / "Applications")):
+            app = Path(base, "Loft.app")
+            if (app / "Contents/MacOS/loft-desktop").exists():
+                return ["open", "-a", str(app)]
+        return None
+    for name in ("loft-desktop",):
+        found = shutil.which(name)
+        if found:
+            return [found]
+    appimage = sorted(Path(paths.HOME / "Applications").glob("Loft*.AppImage")) if (paths.HOME / "Applications").is_dir() else []
+    return [str(appimage[-1])] if appimage else None
+
+
 def cmd_app(argv):
     port = int(flag(argv, "--port", DEFAULT_PORT))
+    desk = None if ("--browser" in argv or "--no-open" in argv) else desktop_app()
+    if desk:
+        # the app reuses a server already on the port, or starts (and later stops) its own
+        env = dict(os.environ, LOFT_PORT=str(port))
+        subprocess.Popen(desk, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        say(f"Loft desktop app ({desk[-1]})")
+        return 0
     if not start_server(port):
         return 1
     url = f"http://127.0.0.1:{port}/"
