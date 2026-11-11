@@ -52,7 +52,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, board as B, core as C, paths, projects as P, usage as U, webapi  # noqa: E402
+from loft import accounts as A, board as B, core as C, paths, projects as P, prompts as PR, transcript as TR, usage as U, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -367,21 +367,20 @@ def derive_title(prompt):
     return title[:1].upper() + title[1:]
 
 
-def send_to_agent(card, text):
-    """Type text into a background agent's prompt and press Enter.
-
-    There is no `claude send`, so this attaches briefly in a hidden pty, pastes
-    the text (bracketed paste, so multi-line stays one message), presses Enter
-    and detaches. The session keeps running, exactly as after `claude attach`.
-    """
+def _attached(card, steps=(), idle=0.8, read_after=0.8):
+    """Attach to a background agent in a hidden pty, wait for the screen to
+    settle, write each step (a string of keys; "\x00SLEEP:<s>" pauses), and
+    detach. The session keeps running, exactly as after `claude attach`.
+    Returns the raw bytes the attach printed (for reading a prompt off it)."""
     env = B.account_env(card)
     env.update(TERM="xterm-256color", COLORTERM="truecolor")
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(str(HOME))
         os.execvpe(CLAUDE, [CLAUDE, "attach", card["id"]], env)
+    out = bytearray()
     try:
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 160, 0, 0))
 
         def drain(idle, limit):
             got, start, last = 0, time.time(), time.time()
@@ -394,17 +393,21 @@ def send_to_agent(card, text):
                         return got
                     if not chunk:
                         return got
-                    got += len(chunk); last = time.time()
+                    got += len(chunk); last = time.time(); out.extend(chunk)
                 elif got and time.time() - last > idle:
                     return got
             return got
 
-        if not drain(1.2, 12):
+        # the first paint lands within ~1.5 s; a spinner may keep it from going idle
+        if not drain(idle, 3.5) and not drain(idle, 8):
             raise RuntimeError("Couldn't open the agent's session.")
-        os.write(fd, b"\x1b[200~" + text.encode() + b"\x1b[201~")
-        time.sleep(0.4)
-        os.write(fd, b"\r")
-        drain(0.8, 3)
+        for st in steps:
+            if st.startswith("\x00SLEEP:"):
+                drain(9, float(st[7:])); continue
+            os.write(fd, st.encode())
+            drain(0.35, 1.2)
+        if steps:
+            drain(read_after, 3)
     finally:
         try:
             os.kill(pid, signal.SIGHUP)
@@ -426,7 +429,110 @@ def send_to_agent(card, text):
                 os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
             except OSError:
                 pass
+    return bytes(out)
+
+
+def send_to_agent(card, text):
+    """Type text into a background agent's prompt and press Enter.
+
+    There is no `claude send`, so this attaches briefly in a hidden pty, pastes
+    the text (bracketed paste, so multi-line stays one message), presses Enter
+    and detaches. Not for pickers: Enter there picks the highlighted row (see
+    answer_route, which drives them with keys)."""
+    _attached(card, ["\x1b[200~" + text + "\x1b[201~", "\x00SLEEP:0.4", "\r"], idle=1.2)
     return "Sent"
+
+
+# ------------------------------------------------------------------ pickers
+_PROMPTS = {}   # (job id, tool_use id) -> parsed permission prompt, so polls don't re-attach
+
+
+def _job_state(jid):
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", jid or ""):
+        return None
+    try:
+        return json.loads((B.JOBS / jid / "state.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+
+_SCRAPING = set()
+
+
+def _scrape(key, card=None):
+    try:
+        card = card or find_card(key[0])
+        got = PR.parse_choices(PR.screen_lines(_attached(card))) if card else None
+    except Exception:
+        got = None
+    if len(_PROMPTS) > 200:
+        _PROMPTS.clear()
+    if got:
+        _PROMPTS[key] = got
+    _SCRAPING.discard(key)
+
+
+def pending_prompt(jid, st, items, card=None, scrape="sync"):
+    """What the agent is waiting on, for a needs-you card:
+    {"kind": "question", "tool", "questions"} for AskUserQuestion,
+    {"kind": "permission", "tool", "title", "options": [{n, label}]} for a tool
+    permission or plan approval (options read off the attach screen, cached),
+    or None (it asked in plain text: a normal reply is right)."""
+    ask = TR.pending_options(items)
+    if ask:
+        return {"kind": "question", "tool": ask["tool"], "questions": ask["questions"]}
+    answered = {it["for"] for it in items if it["kind"] == "result"}
+    last = next((it for it in reversed(items) if it["kind"] in ("tool", "user", "assistant")), None)
+    if not last or last["kind"] != "tool" or last["tool"] in answered:
+        return None
+    key = (jid, last["tool"])
+    if key not in _PROMPTS:
+        if scrape == "off":
+            return None
+        if scrape == "async":   # a poll: read the screen in the background, report it next poll
+            if key not in _SCRAPING:
+                _SCRAPING.add(key)
+                threading.Thread(target=_scrape, args=(key, card), daemon=True).start()
+            return None
+        _scrape(key, card)
+    got = _PROMPTS.get(key)
+    if not got:
+        return None
+    title = (st.get("needs") or "").strip() if isinstance(st.get("needs"), str) else ""
+    return {"kind": "permission", "tool": last["tool"], "title": got["title"] or "Do you want to proceed?",
+            "action": title or f'{last["name"]} · {last["title"]}', "options": got["options"]}
+
+
+def answer_route(jid, body):
+    """POST /api/cards/<id>/answer: pick on the agent's picker with keys.
+    {"tool": <tool_use id>, "answers": [{"choice": i} | {"choices": [..]} | {"other": "text"}, ...]}
+    {"tool": <tool_use id>, "permission": <option number>}
+    409 when the agent is no longer waiting on that tool (the question changed)."""
+    st = _job_state(jid)
+    card = find_card(jid) if st else None
+    if not st or not card or card.get("kind") != "agent":
+        return 404, {"message": "No such agent"}
+    tp = C.transcript_of(st)
+    items = TR.read_page(tp, limit=40)["items"] if tp else []
+    pend = pending_prompt(jid, st, items, card) if C.bucket(st) in ("needs", "failed") else None
+    tool = body.get("tool")
+    if not pend or pend["tool"] != tool:
+        return 409, {"message": "The question changed. Here is the current one.", "pending": pend}
+    try:
+        if pend["kind"] == "question":
+            keys = PR.question_keys(pend["questions"], body.get("answers"))
+        else:
+            keys = PR.permission_keys(body.get("permission"), pend["options"])
+    except PR.AnswerError as e:
+        return 400, {"message": str(e)}
+    _attached(card, keys)
+    _PROMPTS.pop((jid, tool), None)
+    for _ in range(16):   # confirm from the transcript: the tool got its result
+        time.sleep(0.25)
+        if tp and any(it["kind"] == "result" and it["for"] == tool for it in TR.read_page(tp, limit=40)["items"]):
+            return 200, {"message": "Answered", "confirmed": True}
+    return 200, {"message": "Sent", "confirmed": False}
 
 
 def timeline(jid, limit=40):
@@ -442,6 +548,50 @@ def timeline(jid, limit=40):
     except Exception:
         pass
     return out
+
+
+def messages(jid, query):
+    """GET /api/cards/<id>/messages?limit=&before=&after= : the session as chat items.
+    See loft/transcript.py for the item shapes and cursors. (status, payload)."""
+    import re
+    from urllib.parse import parse_qs
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", jid or ""):
+        return 404, {"error": "not found"}
+    q = {k: v[-1] for k, v in parse_qs(query).items()}
+    num = lambda k: int(q[k]) if q.get(k, "").isdigit() else None
+    sf = B.JOBS / jid / "state.json"
+    try:
+        st = json.loads(sf.read_text())
+    except FileNotFoundError:
+        if any(t.get("id") == jid for t in B.load_todos()):
+            return 200, {"id": jid, "state": "todo", "working": False, "detail": "", "session": None, "cursor": 0,
+                         "start": 0, "more": False, "gap": False, "items": [], "pending": None}
+        return 404, {"error": "not found"}
+    except ValueError:
+        return 500, {"error": "unreadable state"}
+    col = C.bucket(st)
+    detail = (st.get("detail") or "").strip()
+    if col == "needs" and detail.startswith("(idle"):
+        col = "todo"
+    out = {"id": jid, "state": col, "working": col == "running", "detail": detail, "pending": None}
+    tp = C.transcript_of(st)
+    if not tp:
+        return 200, {**out, "session": None, "cursor": 0, "start": 0, "more": False, "gap": False, "items": []}
+    after = num("after")
+    if after is not None and q.get("session") and q["session"] != tp.stem:
+        after = None   # a different session file now (resumed): send a fresh page
+    try:
+        page = TR.read_page(tp, limit=num("limit") or 60, before=num("before"), after=after)
+    except OSError:
+        return 200, {**out, "session": None, "cursor": 0, "start": 0, "more": False, "gap": False, "items": []}
+    if after is None and q.get("session") and q["session"] != tp.stem:
+        page["reset"] = True
+    if col in ("needs", "failed"):
+        tail = page["items"] if after is None and num("before") is None else TR.read_page(tp, limit=40)["items"]
+        ask = TR.pending_options(tail)
+        prompt = pending_prompt(jid, st, tail, scrape="off" if q.get("scrape") == "0" else "async") if col == "needs" else None
+        out["pending"] = {"text": detail, "question": ask, "prompt": prompt}
+    return 200, {**out, **page}
 
 
 def snapshot():
@@ -780,6 +930,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, snapshot())
         if path.startswith("/api/timeline/"):
             return self._send(200, timeline(path.rsplit("/", 1)[-1]))
+        parts = path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "cards"] and parts[3] == "messages":
+            return self._send(*messages(parts[2], urlparse(self.path).query))
         if path == "/api/events":
             return self.events()
         if path.startswith("/api/accounts") or path.startswith("/ws/term/login-"):
@@ -1081,6 +1234,13 @@ class H(BaseHTTPRequestHandler):
         if parts[:2] != ["api", "cards"]:
             return self._send(404, {"error": "not found"})
         cid, action = (None, "create") if len(parts) == 2 else (parts[2], parts[3] if len(parts) > 3 else "")
+        if action == "answer":
+            with LOCK:
+                try:
+                    code, payload = answer_route(cid, body)
+                except Exception as e:
+                    code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
+            return self._send(code, payload)
         with LOCK:
             try:
                 code, msg = act(cid, action, body)
