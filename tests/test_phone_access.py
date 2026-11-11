@@ -305,6 +305,9 @@ class InProcess(unittest.TestCase):
             self.assertEqual(oct(f.stat().st_mode & 0o777), "0o600")
             self.assertEqual(req("127.0.0.1", srv.server_address[1], "POST", "/api/files?name=x", b"", h)[0], 400)
             self.assertEqual(req("127.0.0.1", srv.server_address[1], "POST", "/api/files?name=x", b"x", {})[0], 403)
+            c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=5)
+            c.putrequest("POST", "/api/files?name=x"); c.putheader("X-Cagents-Token", S.TOKEN); c.putheader("Content-Length", "-1"); c.endheaders()
+            self.assertEqual(c.getresponse().status, 400); c.close()
         finally:
             srv.shutdown(); srv.server_close()
             os.environ.pop("XDG_DATA_HOME", None)

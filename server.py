@@ -1072,9 +1072,12 @@ class H(BaseHTTPRequestHandler):
             return webapi.handle_post(self, parts[2:])
         if parts == ["api", "files"]:   # raw body, ?name=<file name>
             from urllib.parse import parse_qs
-            n = int(self.headers.get("Content-Length") or 0)
-            if not n or n > UPLOAD_MAX:
-                return self._send(413 if n else 400, {"message": "File too large (50 MB max)." if n else "No file received."})
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                n = 0
+            if n <= 0 or n > UPLOAD_MAX:   # n < 0 would make rfile.read() read until EOF
+                return self._send(413 if n > 0 else 400, {"message": "File too large (50 MB max)." if n > 0 else "No file received."})
             name = (parse_qs(urlparse(self.path).query).get("name") or [""])[0]
             return self._send(200, {"path": save_upload(name, self.rfile.read(n))})
         if parts == ["api", "voice"]:
