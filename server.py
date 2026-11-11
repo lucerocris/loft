@@ -373,13 +373,7 @@ class H(BaseHTTPRequestHandler):
         card = find_card(cid)
         if not key or not card or card["kind"] != "agent":
             return self._send(404, {"error": "no such agent"})
-        accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
-        self.send_response(101)
-        self.send_header("Upgrade", "websocket")
-        self.send_header("Connection", "Upgrade")
-        self.send_header("Sec-WebSocket-Accept", accept)
-        self.end_headers()
-        self.close_connection = True
+        webapi._ws_handshake(self)
         env = B.account_env(card)
         env.update(TERM="xterm-256color", COLORTERM="truecolor")
         pid, fd = pty.fork()

@@ -183,6 +183,7 @@ def post(rest, body):
 def _ws_handshake(h):
     key = h.headers.get("Sec-WebSocket-Key")
     accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+    h.protocol_version = "HTTP/1.1"  # WebKit (Safari, Loft.app) rejects an HTTP/1.0 101
     h.send_response(101)
     h.send_header("Upgrade", "websocket")
     h.send_header("Connection", "Upgrade")

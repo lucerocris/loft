@@ -5,8 +5,18 @@ import Cocoa
 import UserNotifications
 import WebKit
 
-let port = ProcessInfo.processInfo.environment["LOFT_PORT"] ?? "7717"
+// `loft app --port N` passes `--port N`; Spotlight/Dock launches use the default.
+let args = CommandLine.arguments
+let port = args.firstIndex(of: "--port").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "7717"
 let home = URL(string: "http://127.0.0.1:\(port)/")!
+
+// Only Loft's own page (scheme, host and port) gets the microphone and the native bridge.
+func isLoft(_ o: WKSecurityOrigin) -> Bool {
+    o.protocol == "http" && o.host == home.host && o.port == home.port
+}
+func isLoft(_ u: URL) -> Bool {
+    u.scheme == "http" && u.host == home.host && u.port == home.port
+}
 
 // The page guards on `"Notification" in window`; WKWebView has none, so give it one
 // that hands the notification to the app.
@@ -88,19 +98,22 @@ final class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDele
 
     func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
 
-    // Links that leave Loft open in the default browser.
+    // The window only ever shows Loft; anything else opens in the default browser.
     func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if let url = action.request.url, action.navigationType == .linkActivated, url.host != home.host {
+        guard let url = action.request.url else { return decisionHandler(.cancel) }
+        if isLoft(url) || url.absoluteString == "about:blank" { return decisionHandler(.allow) }
+        if action.navigationType == .linkActivated, ["http", "https", "mailto"].contains(url.scheme ?? "") {
             NSWorkspace.shared.open(url)
-            return decisionHandler(.cancel)
         }
-        decisionHandler(.allow)
+        decisionHandler(.cancel)
     }
 
     func webView(_ w: WKWebView, createWebViewWith c: WKWebViewConfiguration, for action: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url { NSWorkspace.shared.open(url) }
+        if let url = action.request.url, ["http", "https", "mailto"].contains(url.scheme ?? "") {
+            NSWorkspace.shared.open(url)
+        }
         return nil
     }
 
@@ -108,7 +121,7 @@ final class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDele
     func webView(_ w: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
                  initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
                  decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        decisionHandler(origin.host == home.host ? .grant : .deny)
+        decisionHandler(isLoft(origin) && frame.isMainFrame ? .grant : .deny)
     }
 
     func webView(_ w: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
@@ -129,7 +142,8 @@ final class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDele
     }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
-        guard let d = m.body as? [String: String], d["kind"] == "notify" else { return }
+        guard isLoft(m.frameInfo.securityOrigin), let d = m.body as? [String: String], d["kind"] == "notify"
+        else { return }
         let content = UNMutableNotificationContent()
         content.title = d["title"] ?? "Loft"
         content.body = d["body"] ?? ""
