@@ -151,19 +151,55 @@ fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
-/// Something on the port that serves Loft's page (with a real token in it).
+/// The proof key the Loft server on `port` wrote to its private (0600) file, if any.
+fn key_file(port: u16) -> Option<String> {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .filter(|s| s.starts_with('/'))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"));
+    let f = base.join("loft").join(format!("server-{port}.key"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let m = f.metadata().ok()?;
+        let me = std::fs::metadata(std::env::var("HOME").ok()?).ok()?.uid();
+        // must be ours and private, or another user could plant a key
+        if m.uid() != me || m.permissions().mode() & 0o077 != 0 {
+            return None;
+        }
+    }
+    let t = std::fs::read_to_string(f).ok()?.trim().to_string();
+    (t.len() >= 32 && t.chars().all(|c| c.is_ascii_hexdigit())).then_some(t)
+}
+
+/// The server on the port is this user's live Loft: it answers a fresh random challenge with
+/// sha256(key:nonce), which needs the key from the private file (never sent over the wire).
 fn is_loft(port: u16) -> bool {
+    use sha2::{Digest, Sha256};
+    let Some(key) = key_file(port) else { return false };
+    let Some(nonce) = nonce() else { return false };
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut s) = TcpStream::connect_timeout(&addr, Duration::from_millis(300)) else { return false };
     let _ = s.set_read_timeout(Some(Duration::from_secs(3)));
     let _ = s.set_write_timeout(Some(Duration::from_secs(3)));
-    if s.write_all(b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").is_err() {
+    let req = format!("GET /api/loft-proof?n={nonce} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n");
+    if s.write_all(req.as_bytes()).is_err() {
         return false;
     }
     let mut body = Vec::new();
-    let _ = s.take(4_000_000).read_to_end(&mut body);
+    let _ = s.take(64_000).read_to_end(&mut body);
     let text = String::from_utf8_lossy(&body);
-    text.starts_with("HTTP/1.") && text.contains("const TOKEN = \"") && !text.contains("__CAGENTS_TOKEN__")
+    let want: String = Sha256::digest(format!("{key}:{nonce}").as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    let ok = text.lines().next().is_some_and(|l| l.starts_with("HTTP/1.") && l.split(' ').nth(1) == Some("200"));
+    ok && text.split("\r\n\r\n").nth(1).map(str::trim) == Some(want.as_str())
+}
+
+/// 16 random bytes as hex, from the OS.
+fn nonce() -> Option<String> {
+    let mut b = [0u8; 16];
+    std::fs::File::open("/dev/urandom").ok()?.read_exact(&mut b).ok()?;
+    Some(b.iter().map(|x| format!("{x:02x}")).collect())
 }
 
 /// The Loft files: $LOFT_REPO (a clone, for development) or the copy bundled with the app.
