@@ -76,7 +76,40 @@ EOF
     ok "launcher: $DATA/applications/loft.desktop"
   elif [ "$OS" = Darwin ]; then
     APP="$HOME/Applications/Loft.app"
-    if command -v osacompile >/dev/null 2>&1; then
+    if command -v swiftc >/dev/null 2>&1; then
+      # native window (WebKit), no browser involved
+      TMP="$(mktemp -d)"
+      mkdir -p "$TMP/Loft.app/Contents/MacOS" "$TMP/Loft.app/Contents/Resources" "$TMP/loft.iconset"
+      swiftc -O -o "$TMP/Loft.app/Contents/MacOS/Loft" "$REPO/macos/Loft.swift"
+      for s in 16 32 128 256; do cp "$REPO/static/icons/loft-${s}x${s}.png" "$TMP/loft.iconset/icon_${s}x${s}.png"; done
+      iconutil -c icns -o "$TMP/Loft.app/Contents/Resources/loft.icns" "$TMP/loft.iconset"
+      cat > "$TMP/Loft.app/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Loft</string>
+  <key>CFBundleDisplayName</key><string>Loft</string>
+  <key>CFBundleIdentifier</key><string>dev.loft.app</string>
+  <key>CFBundleExecutable</key><string>Loft</string>
+  <key>CFBundleIconFile</key><string>loft</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+  <key>NSMicrophoneUsageDescription</key><string>Loft transcribes voice input on this Mac.</string>
+  <key>LoftPython</key><string>$PY</string>
+  <key>LoftCLI</key><string>$REPO/bin/loft</string>
+</dict></plist>
+EOF
+      codesign --force -s - "$TMP/Loft.app" >/dev/null 2>&1 || true
+      mkdir -p "$HOME/Applications"
+      rm -rf "$APP"
+      mv "$TMP/Loft.app" "$APP"
+      rm -rf "$TMP"
+      ok "app: $APP (Spotlight: Loft)"
+    elif command -v osacompile >/dev/null 2>&1; then
+      note "swiftc missing (xcode-select --install); Loft.app will open in a browser window"
       mkdir -p "$HOME/Applications"
       rm -rf "$APP"
       osacompile -o "$APP" -e "do shell script \"'$REPO/bin/loft' app >/dev/null 2>&1 &\""
