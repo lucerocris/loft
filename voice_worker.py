@@ -25,7 +25,7 @@ from faster_whisper import WhisperModel
 
 MODEL = os.environ.get("LOFT_WHISPER_MODEL", "small.en")
 # Words Whisper otherwise mishears; extend with LOFT_WHISPER_HINT.
-HINT = os.environ.get("LOFT_WHISPER_HINT", "n8n, Zoho, TikTok, Claude, SOP, PR, repo, Figma, Loft, Supabase, GitHub, Konsole.")
+HINT = os.environ.get("LOFT_WHISPER_HINT", "Claude, PR, repo, Figma, Loft, GitHub, README, API.")
 model = WhisperModel(MODEL, device="cpu", compute_type="int8")
 print(json.dumps({"ready": MODEL}), flush=True)
 

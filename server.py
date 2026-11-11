@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Loft (was cagents) app server: a tiny localhost API + one HTML page for the agents board.
 
-Stdlib only. Reuses ~/.local/bin/cagents (accounts, organize) and
-~/.local/share/cagents/board.py (cards, actions) so the TUI and the app share
-one set of rules.
+Stdlib only. The rules (accounts, cards, actions, usage) live in the loft/
+package next to this file, shared with the `loft` CLI and terminal board.
 
   python3 server.py [--port 7717] [--phone-port 7717] [--tailnet | --no-tailnet]
                     [--dev-loopback-devices]
@@ -49,19 +48,12 @@ CONF_DIR = Path(os.environ.get("LOFT_CONF_DIR") or HOME / ".config/loft")
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
-def _load(name, path):
-    loader = importlib.machinery.SourceFileLoader(name, str(path))
-    spec = importlib.util.spec_from_loader(name, loader)
-    mod = importlib.util.module_from_spec(spec)
-    loader.exec_module(mod)
-    return mod
+sys.path.insert(0, str(HERE))
+from loft import accounts as A, board as B, core as C, paths, usage as U, webapi  # noqa: E402
 
-
-C = _load("cagents_cli", HOME / ".local/bin/cagents")
-B = _load("cagents_board", HOME / ".local/share/cagents/board.py")
-B.C = C
+CLAUDE = paths.claude_bin()
 LOCK = threading.Lock()  # one mutating action at a time
-VENV_PY = HOME / ".local/share/loft/venv/bin/python"
+VENV_PY = paths.venv_python()
 
 
 class Voice:
@@ -378,7 +370,7 @@ def send_to_agent(card, text):
     the text (bracketed paste, so multi-line stays one message), presses Enter
     and detaches. The session keeps running, exactly as after `claude attach`.
     """
-    env = B.account_env(card["work"])
+    env = B.account_env(card)
     env.update(TERM="xterm-256color", COLORTERM="truecolor")
     pid, fd = pty.fork()
     if pid == 0:
@@ -453,21 +445,19 @@ def snapshot():
     for c in cards:
         c["updated"] = c["updated"].isoformat() if c["updated"] else None
         c["cwd"] = c["cwd"].replace(str(HOME), "~")
-    w5, w7 = B.usage("work")
-    p5, p7 = B.usage("personal")
-    resets = {}
-    for acc in ("work", "personal"):
-        try:
-            lines = (B.RUNTIME / f"claude-usage-cache-{acc}").read_text().splitlines()
-            resets[acc] = {"five": lines[2] if len(lines) > 2 else "", "seven": lines[3] if len(lines) > 3 else ""}
-        except Exception:
-            resets[acc] = {"five": "", "seven": ""}
+    cfg = A.load()
+    cfg["accounts"] = [a for a in cfg["accounts"] if not a.get("pending")]  # still signing in
+    usage = {}  # keyed by account id; "five"/"seven" stay strings ("—" = unknown) as before
+    for acc in cfg["accounts"]:
+        u = U.get(acc)
+        usage[acc["id"]] = {"five": "—" if u["five"] is None else str(u["five"]), "seven": "—" if u["seven"] is None else str(u["seven"]),
+                            "fiveReset": u["fiveReset"], "sevenReset": u["sevenReset"], "error": u["error"]}
     return {
         "cards": sorted(cards, key=lambda c: (not c["pinned"], c["name"].lower())),
-        "usage": {
-            "work": {"five": w5, "seven": w7, **{f"{k}Reset": v for k, v in resets["work"].items()}},
-            "personal": {"five": p5, "seven": p7, **{f"{k}Reset": v for k, v in resets["personal"].items()}},
-        },
+        "usage": usage,
+        "accounts": [A.public(a, cfg) for a in cfg["accounts"]],
+        "defaultAccount": cfg.get("default"),
+        "setup": not A.configured(),
         "dirs": [d.replace(str(HOME), "~") for d in B.recent_dirs()],
         "doneDays": C.DONE_DAYS,
         "voice": Voice.available(),
@@ -482,13 +472,7 @@ def find_card(cid):
 
 
 def open_terminal(card):
-    env = B.account_env(card["work"])
-    title = f"{'WORK' if card['work'] else 'PERSONAL'} · {card['name']}"
-    term = os.environ.get("CAGENTS_TERMINAL", "konsole")
-    if term == "konsole":
-        cmd = ["konsole", "-p", f"tabtitle={title}", "-e", CLAUDE, "attach", card["id"]]
-    else:
-        cmd = [term, "-e", CLAUDE, "attach", card["id"]]
+    cmd, env = B.terminal_command(card)
     subprocess.Popen(cmd, env=env, cwd=str(HOME), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
     return f"opened {card['name']} in a terminal"
@@ -506,7 +490,7 @@ def act(cid, action, body):
         if os.path.realpath(os.path.expanduser(cwd)) == str(HOME):
             return 400, "Pick a project folder: Claude won't start background agents in your home folder."
         todo = {"id": "t" + secrets.token_hex(4), "title": title,
-                "account": "work" if body.get("account") == "work" else "personal",
+                "account": B.resolve_account(body.get("account") or None)["id"],
                 "cwd": cwd.replace(str(HOME), "~"), "prompt": (body.get("prompt") or "").strip(),
                 "created": B.now_utc().isoformat()}
         if body.get("start"):
@@ -543,14 +527,14 @@ def act(cid, action, body):
             return 400, "A name can't be empty."
         return 200, B.act_rename(card, name)
     if action == "account":
-        return 200, B.act_switch_account(card)
+        return 200, B.act_switch_account(card, body.get("account"))
     if action == "pin":
         return 200, B.act_pin(card)
     if action == "archive":
         return 200, B.act_archive(card)
     if action == "stop":
         r = subprocess.run([CLAUDE, "stop", cid], capture_output=True, text=True,
-                           env=B.account_env(card["work"]), cwd=str(HOME), timeout=60)
+                           env=B.account_env(card), cwd=str(HOME), timeout=60)
         out = (r.stdout + r.stderr).strip().splitlines()
         return 200, out[-1] if out else "Stopped"
     if action == "reply":
@@ -679,6 +663,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, timeline(path.rsplit("/", 1)[-1]))
         if path == "/api/events":
             return self.events()
+        if path.startswith("/api/accounts") or path.startswith("/ws/term/login-"):
+            return webapi.handle_get(self, path)
         if path.startswith("/ws/term/"):
             return self.term_ws(path.rsplit("/", 1)[-1])
         return self._send(404, {"error": "not found"})
@@ -752,7 +738,7 @@ class H(BaseHTTPRequestHandler):
         if not key or not card or card["kind"] != "agent":
             return self._send(404, {"error": "no such agent"})
         self._ws_accept()
-        env = B.account_env(card["work"])
+        env = B.account_env(card)
         env.update(TERM="xterm-256color", COLORTERM="truecolor")
         pid, fd = pty.fork()
         if pid == 0:
@@ -931,6 +917,8 @@ class H(BaseHTTPRequestHandler):
         if not self._authed():
             return self._send(403, {"error": "bad token"})
         parts = urlparse(self.path).path.strip("/").split("/")  # api/cards/<id>/<action> | api/cards
+        if parts[:2] == ["api", "accounts"]:
+            return webapi.handle_post(self, parts[2:])
         if parts == ["api", "voice"]:
             n = int(self.headers.get("Content-Length") or 0)
             if not n or n > 25_000_000:
