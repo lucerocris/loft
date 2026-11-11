@@ -219,6 +219,31 @@ kbd { font: 11px var(--mono); color: var(--t3); }
   .bhint { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .sd.live, .mic.rec { animation: none; } }
+/* ---------- phone access ---------- */
+.ibtn.ph-on { color: var(--pers); }
+.top .ibtn[data-phone] { margin-left: auto; } .top .ibtn[data-phone] + .btn { margin-left: 0; }
+dialog.phone { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; padding: 0; background: var(--surface); color: var(--t1); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: 0 24px 64px rgba(0,0,0,.55); }
+dialog.phone::backdrop { background: rgba(8,9,10,.6); }
+.phone .ph-h { display: flex; align-items: center; gap: 8px; padding: 18px 16px 6px 20px; }
+.phone .ph-h h2 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; }
+.phone .ph-b { padding: 6px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+.phone p { margin: 0; color: var(--t2); }
+.sw { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--canvas); cursor: pointer; }
+.sw .tx { flex: 1; } .sw .tx b { display: block; font-weight: 500; } .sw .tx span { font-size: 12px; color: var(--t3); }
+.sw .tx span.bad { color: var(--failed); } .sw .tx span.ok { color: var(--pers); }
+.tgl { width: 36px; height: 20px; border-radius: 99px; background: var(--selected); border: 1px solid var(--border-strong); position: relative; flex: none; transition: background .15s; }
+.tgl::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--t3); transition: transform .15s, background .15s; }
+.tgl[aria-checked="true"] { background: var(--pers); border-color: var(--pers); } .tgl[aria-checked="true"]::after { transform: translateX(16px); background: var(--on-primary); }
+.qr { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--canvas); }
+.qr .code { background: #fff; padding: 10px; border-radius: var(--r-sm); line-height: 0; } .qr .code svg { width: 216px; height: 216px; }
+.qr .kv { width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 12px; color: var(--t3); }
+.qr .kv code { font: 11px var(--mono); color: var(--t2); overflow-wrap: anywhere; user-select: all; }
+.qr .kv button { border: 0; background: none; color: var(--t3); cursor: pointer; padding: 2px; } .qr .kv button:hover { color: var(--t1); }
+.devs { display: flex; flex-direction: column; gap: 2px; }
+.dev { display: flex; align-items: center; gap: 10px; padding: 8px 4px 8px 10px; border-radius: var(--r-sm); }
+.dev:hover { background: var(--raised); }
+.dev .tx { flex: 1; min-width: 0; } .dev .tx b { font-weight: 500; } .dev .tx span { display: block; font: 11px var(--mono); color: var(--t3); }
+.dev .btn { height: 28px; color: var(--failed); } .dev .btn.armed { background: var(--failed); color: var(--on-primary); }
 </style>
 </head>
 <body>
@@ -227,6 +252,7 @@ kbd { font: 11px var(--mono); color: var(--t3); }
     <div class="top">
       <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#5B8DFF"/><circle cx="41.5" cy="38" r="7" fill="#46C07D"/></svg>loft</div>
       <div class="vsw" data-vsw role="group" aria-label="View"></div>
+      <button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button>
       <button class="btn primary" id="newBtn" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button>
     </div>
     <div class="filters" id="filters" role="group" aria-label="Account"></div>
@@ -236,18 +262,20 @@ kbd { font: 11px var(--mono); color: var(--t3); }
   <section class="boardv" id="boardv" aria-label="Board">
     <div class="btop"><div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#5B8DFF"/><circle cx="41.5" cy="38" r="7" fill="#46C07D"/></svg>loft</div>
       <div class="vsw" data-vsw role="group" aria-label="View"></div><div class="filters" id="bfilters" role="group" aria-label="Account"></div>
-      <div class="usage" id="busage"></div><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div>
+      <div class="usage" id="busage"></div><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div>
     <div class="cols" id="cols"></div>
     <div class="bhint">j k move · h l column · Enter open · s start a todo · drag a todo to Working to start it · b inbox · n new</div>
   </section>
   <main class="pane" id="pane"></main>
 </div>
 <div class="menu" id="menu" hidden></div>
+<dialog class="phone" id="phoneDlg" aria-labelledby="phoneTitle"></dialog>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="/static/lucide.min.js"></script>
 <script src="/static/xterm.js"></script>
 <script src="/static/addon-fit.js"></script>
+<script src="/static/qrcode-generator.js"></script>
 <script>
 const TOKEN = "__CAGENTS_TOKEN__";
 const $ = s => document.querySelector(s);
@@ -576,6 +604,50 @@ function move(dir) {
   document.querySelector(`#list [data-id="${ids[i]}"]`)?.scrollIntoView({ block: "nearest" });
 }
 
+/* ---------- phone access ---------- */
+let PH = null, pairing = null;
+async function phoneLoad() { try { PH = await api("/api/phone"); } catch (e) { PH = { error: e.message, devices: [] }; } phoneMark(); }
+function phoneMark() { document.querySelectorAll("[data-phone]").forEach(b => { b.classList.toggle("ph-on", !!PH?.running); b.title = PH?.running ? `Phone access on · ${PH.ip}:${PH.port}` : "Phone access"; }); }
+function phoneRender() {
+  const d = $("#phoneDlg"); if (!PH) return;
+  const st = PH.running ? `<span class="ok">On · listening on ${esc(PH.ip)}:${PH.port}, tailnet only</span>` : PH.on && PH.error ? `<span class="bad">${esc(PH.error)}</span>` : `<span>Off. Nothing listens outside this laptop.</span>`;
+  const seen = x => x ? ago(x.replace(/([+-]\d\d)(\d\d)$/, "$1:$2")) + " ago" : "never connected";
+  let qr = "";
+  if (pairing) {
+    const q = qrcode(0, "M"); q.addData(pairing.uri); q.make();
+    qr = `<div class="qr"><div class="code">${q.createSvgTag({ cellSize: 4, margin: 0, scalable: true })}</div>
+      <p style="text-align:center">On the phone, open Loft and point the camera at this code. It's shown once.</p>
+      <div class="kv"><span>Address</span><code>${esc(pairing.host)}</code><button data-copy="${esc(pairing.host)}" title="Copy"><i data-lucide="copy" class="ic"></i></button>
+      <span>Pairing code</span><code>${esc(pairing.token)}</code><button data-copy="${esc(pairing.token)}" title="Copy"><i data-lucide="copy" class="ic"></i></button></div></div>`;
+  }
+  d.innerHTML = `<div class="ph-h"><h2 id="phoneTitle">Phone access</h2><button class="ibtn" data-phone-close aria-label="Close"><i data-lucide="x" class="ic"></i></button></div>
+    <div class="ph-b">
+      <div class="sw" data-phone-toggle role="switch" aria-checked="${!!PH.on}" tabindex="0"><div class="tx"><b>Let Loft Mobile connect</b>${st}</div><div class="tgl" aria-checked="${!!PH.on}"></div></div>
+      <p>Your phone reaches this laptop over Tailscale only. Each phone gets its own code; revoke it here and it's cut off at once.</p>
+      ${PH.running ? (pairing ? qr : `<div><button class="btn secondary" data-pair><i data-lucide="qr-code" class="ic"></i>Pair a phone</button></div>`) : ""}
+      <div><div class="label" style="margin-bottom:6px">Paired phones</div><div class="devs">${(PH.devices || []).length ? PH.devices.map(x =>
+        `<div class="dev"><i data-lucide="smartphone" class="ic" style="color:var(--t3)"></i><div class="tx"><b>${esc(x.name)}</b>${x.node_name ? ` <span style="display:inline">· ${esc(x.node_name)}</span>` : ""}<span>${esc(seen(x.last_seen))}${x.last_ip ? " · " + esc(x.last_ip) : ""}</span></div><button class="btn quiet" data-revoke="${esc(x.id)}">Revoke</button></div>`).join("")
+        : `<div class="none" style="padding-left:0">No phones paired yet.</div>`}</div></div>
+    </div>`;
+  icons();
+}
+async function phoneOpen() { pairing = null; await phoneLoad(); phoneRender(); const d = $("#phoneDlg"); if (!d.open) d.showModal(); }
+$("#phoneDlg").addEventListener("click", async e => {
+  const d = $("#phoneDlg"); if (e.target === d) { d.close(); return; }
+  const t = e.target.closest("button, [data-phone-toggle]"); if (!t) return;
+  if (t.hasAttribute("data-phone-close")) return d.close();
+  if (t.hasAttribute("data-phone-toggle")) { try { PH = await api("/api/phone", { on: !PH.on }); pairing = null; } catch (er) { toast(er.message, true); } phoneMark(); return phoneRender(); }
+  if (t.hasAttribute("data-pair")) { try { pairing = await api("/api/pair", { name: "phone" }); await phoneLoad(); } catch (er) { toast(er.message, true); } return phoneRender(); }
+  if (t.dataset.copy) { navigator.clipboard?.writeText(t.dataset.copy).then(() => toast("Copied")); return; }
+  if (t.dataset.revoke) {
+    if (!t.classList.contains("armed")) { t.classList.add("armed"); t.textContent = "Revoke?"; return; }
+    try { await api(`/api/devices/${t.dataset.revoke}/revoke`, {}); toast("Revoked. That phone is disconnected."); } catch (er) { toast(er.message, true); }
+    await phoneLoad(); return phoneRender();
+  }
+});
+$("#phoneDlg").addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") { const t = e.target.closest("[data-phone-toggle]"); if (t) { e.preventDefault(); t.click(); } } e.stopPropagation(); });
+$("#phoneDlg").addEventListener("close", () => { pairing = null; });
+
 /* ---------- events ---------- */
 document.addEventListener("click", async e => {
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
@@ -583,6 +655,7 @@ document.addEventListener("click", async e => {
   const t = e.target.closest("button, .item, .bcard"); if (!t) return;
   if (t.matches(".item, .bcard")) return setSel(t.dataset.id);
   if (t.dataset.view) return setView(t.dataset.view);
+  if (t.hasAttribute("data-phone")) return phoneOpen();
   if (t.dataset.acct !== undefined) { acct = t.dataset.acct; store.set("loft.acct", acct); return render(); }
   if (["newBtn", "newBtn2", "newBtn3", "newBtn4"].includes(t.id)) return setSel("new");
   if (t.hasAttribute("data-back")) return setSel(null);
@@ -663,6 +736,7 @@ document.addEventListener("dragend", () => { if (!dragId) return; dragId = null;
 function apply(s) { S = s; loaded = true; notifyNew(); render(); }
 api("/api/state").then(apply).catch(e => toast(e.message, true));
 if (!new URL(location.href).searchParams.has("nosse")) { const es = new EventSource(`/api/events?t=${TOKEN}`); es.onmessage = m => apply(JSON.parse(m.data)); }
+phoneLoad();
 setInterval(() => { if (loaded) { renderInbox(); renderBoard(); } }, 30000);
 </script>
 </body>
