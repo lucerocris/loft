@@ -5,7 +5,8 @@ file (they reach tens of MB), and turns it into a short list of items:
 
   user       {text}                         a prompt you (or Loft) sent
   assistant  {text}                         the agent's prose, markdown
-  tool       {tool, name, title, detail}    one tool call, compact ("Bash · Run the tests")
+  tool       {tool, name, title, detail, plan?}  one tool call, compact ("Bash · Run the tests");
+                                            ExitPlanMode carries the plan (markdown)
   result     {for, ok, preview, lines, text, diff?}  a tool's output, matched to its call by `for`
   question   {tool, questions:[{question, header, multi, options:[{label, description}]}]}
   note       {text}                         interrupted, compacted, background task update
@@ -143,6 +144,8 @@ def tool_summary(name, inp):
         return label, _one_line(inp.get("url") or "", 120), _one_line(inp.get("prompt") or "", 300)
     if name == "WebSearch":
         return label, _one_line(inp.get("query") or "", 120), ""
+    if name == "ExitPlanMode":
+        return "Plan", "Ready to code?", ""
     if name == "TodoWrite":
         todos = inp.get("todos") or []
         return "Todos", f"{len(todos)} items", ""
@@ -254,8 +257,11 @@ def entry_items(e):
                     out.append({"id": bid, "kind": "question", "at": at, "tool": b.get("id"), "questions": qs})
                     continue
                 label, title, detail = tool_summary(name, inp)
-                out.append({"id": bid, "kind": "tool", "at": at, "tool": b.get("id"), "name": label,
-                            "title": title, "detail": detail})
+                item = {"id": bid, "kind": "tool", "at": at, "tool": b.get("id"), "name": label,
+                        "title": title, "detail": detail}
+                if name == "ExitPlanMode" and isinstance(inp.get("plan"), str):
+                    item["plan"] = inp["plan"][:TEXT_CAP]
+                out.append(item)
     # The final 'user' text of a tool_result-only entry is never a prompt.
     return out
 
