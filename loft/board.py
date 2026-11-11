@@ -14,6 +14,7 @@ from pathlib import Path
 from . import accounts as A
 from . import core as C
 from . import paths
+from . import projects as P
 from . import usage as U
 
 HOME = paths.HOME
@@ -98,6 +99,10 @@ def todo_account(t, cfg):
 
 def load_cards(show_all_done):
     cfg = A.load()
+    try:
+        pcfg = P.load()
+    except SystemExit:
+        pcfg = P.empty()
     live = live_shorts()
     pins = set(pins_read())
     cards = []
@@ -122,7 +127,7 @@ def load_cards(show_all_done):
             "kind": "agent", "id": jid, "name": st.get("name") or jid,
             **_acc_fields(acc, cfg), "col": b, "state": st.get("state"),
             "detail": detail, "result": (out or {}).get("result") or "",
-            "cwd": st.get("worktreePath") or st.get("cwd") or "", "project": C.project(st),
+            "cwd": st.get("worktreePath") or st.get("cwd") or "", "folderName": C.project(st),
             "updated": upd, "live": jid in live, "pinned": jid in pins,
             "failed": st.get("state") == "failed",
             "links": [ch.get("href") for ch in (st.get("children") or []) if isinstance(ch, dict) and ch.get("href")],
@@ -133,10 +138,17 @@ def load_cards(show_all_done):
         cards.append({
             "kind": "todo", "id": t["id"], "name": t.get("title") or "untitled", **_acc_fields(todo_account(t, cfg), cfg),
             "col": "todo", "state": "todo", "detail": t.get("prompt") or "(no prompt yet)", "result": "",
-            "cwd": cwd, "project": Path(cwd).name,
+            "cwd": cwd, "folderName": Path(cwd).name, "projectPin": t.get("project"),
             "updated": C.parse_t(t.get("created") or ""), "live": False, "pinned": False, "failed": False, "links": [],
             "pending": None,
         })
+    for c in cards:
+        c["folder"] = c["cwd"]
+        pin = c.pop("projectPin", None)
+        if pin and P.get(pin, pcfg) and c["id"] not in pcfg["assignments"]:
+            c["project"] = pin           # a todo written for a project
+        else:
+            c["project"] = P.project_of(c["id"], c["cwd"], pcfg)
     return cards
 
 
@@ -506,6 +518,13 @@ def launch_todo(todo):
                 pass
             break
         time.sleep(0.1)
+    if todo.get("project"):   # keep the project the task was written for, even outside its folders
+        try:
+            with P.locked() as pcfg:
+                if P.get(todo["project"], pcfg) and P.project_of(jid, cwd, {**pcfg, "assignments": {}}) != todo["project"]:
+                    P.assign(jid, todo["project"], pcfg)
+        except Exception:
+            pass
     return jid, f"started {jid} on {acc['label']}"
 
 
@@ -588,7 +607,7 @@ class Board:
             cards = [c for c in cards if c["account"] == self.view]
         if self.filter:
             q = self.filter.lower()
-            cards = [c for c in cards if q in (c["name"] + " " + c["detail"] + " " + c["project"]).lower()]
+            cards = [c for c in cards if q in (c["name"] + " " + c["detail"] + " " + c["folderName"]).lower()]
         self.cards = cards
         self.bycol = {k: sort_cards([c for c in cards if c["col"] == k]) for k, _ in COLS}
         for k, _ in COLS:
@@ -667,7 +686,7 @@ class Board:
                     mark = "✗"
                 self.put(y, x0 + 1, f"{mark} {card['name']}".ljust(colw - 1), base | curses.A_BOLD, colw - 1)
                 ago = C.ago(card["updated"]) if card["updated"] else ""
-                meta = f"{account_label(card)[:10]} · {card['project'][:colw - 20]}"
+                meta = f"{account_label(card)[:10]} · {card['folderName'][:colw - 20]}"
                 self.put(y + 1, x0 + 2, meta.ljust(colw - 2 - len(ago) - 1), acc | (base and curses.A_BOLD), colw - 2)
                 self.put(y + 1, x0 + colw - len(ago) - 1, ago, curses.A_DIM)
                 self.put(y + 2, x0 + 2, card["detail"], curses.A_DIM | (self.RED if card["failed"] else 0), colw - 3)

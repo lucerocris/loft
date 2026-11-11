@@ -112,7 +112,7 @@ def post(rest, body):
             for a in cfg["accounts"]:
                 a["email"] = LC.identify(a)[0] or ""
         else:
-            label = (body.get("label") or "").strip() or "Personal"
+            label = (body.get("label") or "").strip() or "Main"
             acc = {"id": A.slug(label), "label": label, "color": body.get("color") if body.get("color") in A.COLORS else "blue",
                    "creds_dir": A.DEFAULT_CREDS}
             acc["email"] = LC.identify(acc)[0] or ""

@@ -29,6 +29,15 @@
   loft account default <id>           account for new tasks and agents with no saved login
   loft account identify [id]          look up each login's email again
   loft account remove <id>
+  loft project list                   projects, their accounts, folders and agent counts
+  loft project add <name> [--folder DIR ...] [--account ID ...] [--default ID|auto] [--color C]
+  loft project edit <id|name> [--name N] [--folder DIR ...] [--account ID ...] [--default ID|auto|none] [--color C]
+                            --folder / --account replace the list; pass "-" to clear it
+  loft project rm <id|name>
+  loft project assign <agent id|name> <project|none>
+                            pin one agent (or todo) to a project, or back to its folder's
+  loft view <status|account|project|folder|none>
+                            the default "group by" for new windows and phones
   loft migrate-config [--yes] [--force]
                             write accounts.json from the older two-account (Work/Personal) setup
 """
@@ -46,6 +55,7 @@ from . import __version__
 from . import accounts as A
 from . import core as C
 from . import paths
+from . import projects as P
 from . import usage as U
 
 DEFAULT_PORT = int(os.environ.get("LOFT_PORT") or os.environ.get("CAGENTS_PORT") or 7717)
@@ -532,6 +542,137 @@ def cmd_switch(argv):
     return 0 if r["ok"] else 1
 
 
+# ------------------------------------------------------------------ projects
+
+def flags(argv, name):
+    """All values of a repeatable flag (removed from argv). None when absent."""
+    out = None
+    while name in argv:
+        i = argv.index(name)
+        out = (out or []) + ([argv[i + 1]] if i + 1 < len(argv) else [])
+        del argv[i:i + 2]
+    return out
+
+
+def describe_project(p, acc_cfg, counts=None):
+    accs = ", ".join((A.get(a, acc_cfg) or {"label": a})["label"] for a in p["accounts"]) or "any account"
+    dflt = {"auto": "auto (most usage left)", None: "global default"}.get(p["defaultAccount"]) or \
+        (A.get(p["defaultAccount"], acc_cfg) or {"label": p["defaultAccount"]})["label"]
+    n = (counts or {}).get(p["id"], {}).get("total", 0)
+    folders = ", ".join(f.replace(str(paths.HOME), "~", 1) for f in p["folders"]) or "no folders"
+    return (f"{C.c(C.BOLD, p['name'])} {C.c(C.DIM, '(' + p['id'] + ', ' + p['color'] + ')')}  {n} agent{'s' if n != 1 else ''}\n"
+            f"    accounts: {accs} · new tasks: {dflt}\n    folders: {folders}")
+
+
+def _project_body(rest):
+    body = {}
+    name = flag(rest, "--name")
+    if name is not None:
+        body["name"] = name
+    color = flag(rest, "--color")
+    if color is not None:
+        body["color"] = color
+    dflt = flag(rest, "--default")
+    if dflt is not None:
+        body["defaultAccount"] = None if dflt in ("none", "-", "") else dflt
+    for key, fl in (("folders", "--folder"), ("accounts", "--account")):
+        v = flags(rest, fl)
+        if v is not None:
+            v = [x for x in v if x != "-"]
+            body[key] = [os.path.abspath(os.path.expanduser(x)) for x in v] if key == "folders" else v
+    return body
+
+
+def _check_accounts(body, acc_cfg):
+    for a in body.get("accounts") or []:
+        if not A.get(a, acc_cfg):
+            raise SystemExit(f"unknown account {a!r} (see `loft account list`)")
+    d = body.get("defaultAccount")
+    if d and d != P.AUTO and not A.get(d, acc_cfg):
+        raise SystemExit(f"unknown account {d!r} for --default (an account id, auto or none)")
+
+
+def cmd_project(argv):
+    sub = argv[0] if argv else "list"
+    rest = list(argv[1:])
+    usage = ("usage: loft project list\n"
+             "       loft project add <name> [--folder DIR ...] [--account ID ...] [--default ID|auto] [--color C]\n"
+             "       loft project edit <id|name> [--name N] [--folder DIR ...] [--account ID ...] [--default ID|auto|none] [--color C]\n"
+             "       loft project rm <id|name>\n"
+             "       loft project assign <agent> <project|none>")
+    if sub in ("-h", "--help", "help") or any(a in ("-h", "--help") for a in rest):
+        say(usage); return
+    acc_cfg = A.load()
+    try:
+        if sub in ("list", "ls"):
+            cfg = P.load()
+            if not cfg["projects"]:
+                say(C.c(C.DIM, "no projects yet. `loft project add <name> --folder <dir>`"))
+            try:
+                from . import board
+                counts = P.count(board.load_cards(show_all_done=True))
+            except Exception:
+                counts = {}
+            for p in cfg["projects"]:
+                say(describe_project(p, acc_cfg, counts))
+            return
+        if sub in ("add", "new", "create"):
+            body = _project_body(rest)
+            if any(a.startswith("--") for a in rest):
+                raise SystemExit(f"unknown option {next(a for a in rest if a.startswith('--'))}\n{usage}")
+            if rest:
+                body["name"] = " ".join(rest)
+            if not body.get("name"):
+                raise SystemExit("usage: loft project add <name> [--folder DIR ...] [--account ID ...] [--default ID|auto]")
+            _check_accounts(body, acc_cfg)
+            with P.locked() as cfg:
+                p = P.create(body, cfg)
+            say(f"added {p['name']} ({p['id']})"); return
+        if sub in ("edit", "set"):
+            if not rest:
+                raise SystemExit("usage: loft project edit <id|name> [--name N] [--folder DIR ...] [--account ID ...] [--default ID|auto|none] [--color C]")
+            body = _project_body(rest)
+            _check_accounts(body, acc_cfg)
+            with P.locked() as cfg:
+                p = P.find(" ".join(rest), cfg)
+                if not p:
+                    raise SystemExit(f"no project {' '.join(rest)!r}")
+                P.update(p["id"], body, cfg)
+            say(f"saved {p['name']}"); return
+        if sub in ("rm", "remove", "delete"):
+            with P.locked() as cfg:
+                p = P.find(" ".join(rest), cfg)
+                if not p:
+                    raise SystemExit(f"no project {' '.join(rest)!r}")
+                P.remove(p["id"], cfg)
+            say(f"removed {p['name']}; its agents are unsorted now"); return
+        if sub == "assign":
+            if len(rest) < 2:
+                raise SystemExit("usage: loft project assign <agent id|name> <project|none>")
+            from . import board
+            key, target = rest[0], " ".join(rest[1:])
+            cards = board.load_cards(show_all_done=True)
+            card = next((c for c in cards if c["id"] == key or c["id"].startswith(key)), None) or \
+                next((c for c in cards if key.lower() in c["name"].lower()), None)
+            if not card:
+                raise SystemExit(f"no agent or todo matches {key!r}")
+            with P.locked() as cfg:
+                p = None if target.lower() in ("none", "-") else P.find(target, cfg)
+                if target.lower() not in ("none", "-") and not p:
+                    raise SystemExit(f"no project {target!r}")
+                P.assign(card["id"], p and p["id"], cfg)
+            if card["kind"] == "todo":
+                todos = board.load_todos()
+                for t in todos:
+                    if t["id"] == card["id"]:
+                        t["project"] = p and p["id"]
+                board.save_todos(todos)
+            say(f"{card['name']} -> {p['name'] if p else 'its folder project (or unsorted)'}"); return
+    except ValueError as e:
+        raise SystemExit(str(e))
+    raise SystemExit("usage: loft project list|add|edit|rm|assign (see `loft help`)")
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     show_all = "--all" in argv
@@ -563,6 +704,14 @@ def main(argv=None):
         return cmd_migrate_config(rest)
     if cmd == "switch":
         return cmd_switch(rest)
+    if cmd in ("project", "projects"):
+        cmd_project(rest); return 0
+    if cmd == "view":
+        if not rest or rest[0] not in P.GROUP_BY:
+            raise SystemExit("usage: loft view " + "|".join(P.GROUP_BY))
+        with P.locked() as cfg:
+            cfg["view"]["groupBy"] = rest[0]
+        say(f"group by {rest[0]}"); return 0
     if cmd in ("attach", "a"):
         if not rest: raise SystemExit("usage: loft attach <id|name>")
         C.attach(C.find(C.load(), rest[0]), rest[1:])
