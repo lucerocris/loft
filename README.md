@@ -94,10 +94,43 @@ session dir (`cswap run N` creates it) as an account pointing at that dir. Nothi
 cswap keeps managing it. Agents you started under `cswap run N` live in that profile's own
 `jobs/`; `loft migrate --yes` moves them into the shared view and keeps their account.
 
+## Desktop app
+
+Loft ships as a real desktop app (Tauri v2, `desktop/`). It opens its own window, keeps a tray
+icon (needs-you count, New task, Quit), allows one window at a time, and starts the Loft server
+for you, or attaches to one already running on 127.0.0.1:7717. Quitting stops only a server the
+app started. The app bundles the server files (`server.py`, `loft/`, `static/`, `index.html`,
+`voice_worker.py`) and runs them with your system `python3`; config and data stay in the usual
+user folders. `LOFT_REPO`, `LOFT_PORT` and `LOFT_PYTHON` override the defaults; the log is
+`~/.cache/loft/desktop.log`.
+
+Install a build from the GitHub release (or build it yourself, below):
+
+- Fedora / RHEL: `sudo dnf install ./Loft-<version>-1.x86_64.rpm`
+- Debian / Ubuntu: `sudo apt install ./Loft_<version>_amd64.deb`
+- Any Linux: `chmod +x Loft_<version>_amd64.AppImage` and run it (bigger: it bundles GStreamer
+  so voice recording works).
+- macOS: open the `.dmg` and drag Loft to Applications. Builds are unsigned for now, so the first
+  time right-click Loft and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Loft.app`.
+
+`loft app` opens the desktop app when it's installed; `loft app --browser` opens the older
+Chrome/Edge `--app` window instead.
+
+Build it yourself: install Rust (`rustup`) and the Tauri CLI (`cargo install tauri-cli --version "^2" --locked`),
+plus on Fedora `webkit2gtk4.1-devel javascriptcoregtk4.1-devel libsoup3-devel
+libappindicator-gtk3-devel librsvg2-devel libxdo-devel patchelf`. Then `cd desktop && cargo tauri build`.
+For the AppImage on Fedora set `GSTREAMER_PLUGINS_DIR=/usr/lib64/gstreamer-1.0
+GSTREAMER_HELPERS_DIR=/usr/libexec/gstreamer-1.0`. The `desktop` GitHub workflow builds the macOS
+`.dmg` and Linux packages on tags `desktop-v*`.
+
+Signing (TODO): signed and notarized macOS builds need an Apple Developer account and these repo
+secrets: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_PASSWORD`, `APPLE_TEAM_ID`.
+
 ## Using it
 
 ```sh
-loft app             # open the window (starts the local server if needed)
+loft app             # open the desktop app (or --browser for the Chrome window)
 loft                 # terminal board
 loft list            # text list; --all includes old finished agents
 loft attach <name>   # open an agent in this terminal with its own account
