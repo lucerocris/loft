@@ -146,6 +146,18 @@ the turn.
 Keys in the app: `N` new task, `B` inbox/board, `J`/`K` move, `T` terminal, `V` speak,
 `,` accounts, `P` projects, `G` cycle Group by, `Esc` back.
 
+## Prompt queue
+
+Queue prompts for an agent from the box under its terminal, or just reply while it works. A
+queued prompt goes out once the agent leaves Working and its account is under its 5-hour and
+7-day limits, one at a time, in order. If the account is at a limit, it waits for the reset
+time shown on the card. Starting a todo on an account at its limit schedules it the same way.
+
+While anything is queued, Loft keeps the machine from idle-sleeping (`caffeinate` on macOS,
+`systemd-inhibit` on Linux), so prompts go out at the reset. A closed lid on battery still
+sleeps; anything due then goes out on the next wake. Queues live in
+`~/.claude/jobs/<id>/loft-queue.json`.
+
 ## Projects and grouping
 
 Group agents by status, account, project, folder or nothing. A project is a set of folders plus
