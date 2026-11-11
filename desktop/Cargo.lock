@@ -2012,6 +2012,7 @@ name = "loft-desktop"
 version = "2.1.0"
 dependencies = [
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

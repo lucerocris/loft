@@ -41,6 +41,9 @@ PORT = int(_arg("--port", 7717))
 PHONE_PORT = int(_arg("--phone-port", PORT or 7717))
 DEV_LOOPBACK_DEVICES = "--dev-loopback-devices" in sys.argv
 TOKEN = secrets.token_hex(16)
+# Never served. Kept in a 0600 file so the desktop app can challenge the server on the port
+# (sha256(PROOF_KEY:nonce)) and know it is this user's live Loft, not a replay of TOKEN.
+PROOF_KEY = secrets.token_hex(32)
 CLAUDE = str(HOME / ".local/bin/claude")
 VERSION = "2.1"
 HOSTNAME = socket.gethostname().split(".")[0]
@@ -751,6 +754,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, html.encode(), "text/html; charset=utf-8")
         if path == "/favicon.ico":
             self.send_response(204); self.end_headers(); return
+        if path == "/api/loft-proof":
+            from urllib.parse import parse_qs
+            n = (parse_qs(urlparse(self.path).query).get("n") or [""])[0]
+            if len(n) != 32 or any(c not in "0123456789abcdef" for c in n):
+                return self._send(400, {"error": "bad nonce"})
+            return self._send(200, hashlib.sha256(f"{PROOF_KEY}:{n}".encode()).hexdigest().encode(), "text/plain")
         if path.startswith("/static/"):
             f = (HERE / path.lstrip("/")).resolve()
             if HERE in f.parents and f.is_file():
@@ -1137,19 +1146,25 @@ def main():
     srv.daemon_threads = True
     # --port 0 picks a free port; this line is the handshake the desktop app reads.
     port = srv.server_address[1]
-    # Private (0600) copy of this run's token: the desktop app reads it to confirm the server
-    # on the port is the user's own Loft before trusting it with the microphone.
+    # PROOF_KEY in a private (0600) file: the desktop app challenges the server with it before
+    # trusting the port with the microphone. A file left by a crash is harmless: the key dies
+    # with the process and was never sent over the wire.
+    kf = paths.cache_dir() / f"server-{port}.key"
+    def drop_key():
+        try: kf.unlink(missing_ok=True)
+        except OSError: pass
     try:
-        tf = paths.cache_dir() / f"server-{port}.token"
-        tf.parent.mkdir(parents=True, exist_ok=True)
-        tf.unlink(missing_ok=True)
-        with os.fdopen(os.open(tf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as fh:
-            fh.write(TOKEN)
+        kf.parent.mkdir(parents=True, exist_ok=True)
+        drop_key()
+        with os.fdopen(os.open(kf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as fh:
+            fh.write(PROOF_KEY)
+        import atexit; atexit.register(drop_key)
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     except OSError as e:
-        print(f"couldn't write the token file: {e}", file=sys.stderr, flush=True)
+        print(f"couldn't write the key file: {e}", file=sys.stderr, flush=True)
     print(f"loft on http://127.0.0.1:{port}", flush=True)
     if "--exit-with-stdin" in sys.argv:   # desktop app: exit when the parent goes away
-        threading.Thread(target=lambda: (sys.stdin.read(), os._exit(0)), daemon=True).start()
+        threading.Thread(target=lambda: (sys.stdin.read(), drop_key(), os._exit(0)), daemon=True).start()
     if DEV_LOOPBACK_DEVICES:
         print("DEV: device tokens are accepted on 127.0.0.1 too (--dev-loopback-devices)", flush=True)
     on = load_config().get("phone", False)
