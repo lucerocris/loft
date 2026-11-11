@@ -115,6 +115,21 @@ def audio_suffix(ctype):
     return AUDIO_EXT.get(sub, ".webm")
 
 
+UPLOAD_MAX = 50_000_000
+
+
+def save_upload(name, data):
+    """A file sent from the phone, kept under <data>/uploads/<stamp>-<rand>/<name>
+    so an agent can be pointed at it by path. Returns the absolute path."""
+    base = "".join(c if c.isalnum() or c in "._- " else "_" for c in Path(name or "").name).strip(" .") or "file"
+    d = paths.data_dir() / "uploads" / f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}"
+    d.mkdir(parents=True, mode=0o700)
+    f = d / base[-120:]
+    with os.fdopen(os.open(f, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as fh:
+        fh.write(data)
+    return str(f)
+
+
 # ------------------------------------------------------------ phone access
 def _write_private(path, data):
     """Atomic write, mode 0600, in a 0700 directory."""
@@ -1055,6 +1070,13 @@ class H(BaseHTTPRequestHandler):
         parts = urlparse(self.path).path.strip("/").split("/")  # api/cards/<id>/<action> | api/cards
         if parts[:2] == ["api", "accounts"]:
             return webapi.handle_post(self, parts[2:])
+        if parts == ["api", "files"]:   # raw body, ?name=<file name>
+            from urllib.parse import parse_qs
+            n = int(self.headers.get("Content-Length") or 0)
+            if not n or n > UPLOAD_MAX:
+                return self._send(413 if n else 400, {"message": "File too large (50 MB max)." if n else "No file received."})
+            name = (parse_qs(urlparse(self.path).query).get("name") or [""])[0]
+            return self._send(200, {"path": save_upload(name, self.rfile.read(n))})
         if parts == ["api", "voice"]:
             n = int(self.headers.get("Content-Length") or 0)
             if not n or n > 25_000_000:

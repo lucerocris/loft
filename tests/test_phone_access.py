@@ -289,6 +289,27 @@ class InProcess(unittest.TestCase):
         self.assertEqual([f("audio/mp4"), f("audio/aac"), f("audio/m4a"), f("audio/webm;codecs=opus"), f("audio/ogg"), f("audio/wav")],
                          [".m4a", ".m4a", ".m4a", ".webm", ".ogg", ".wav"])
 
+    def test_upload_saved_private_with_safe_name(self):
+        S = self.S
+        data = tempfile.mkdtemp(prefix="loft-test-data-")
+        os.environ["XDG_DATA_HOME"] = data
+        srv = S.ThreadingHTTPServer(("127.0.0.1", 0), S.H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            h = {"X-Cagents-Token": S.TOKEN, "Content-Type": "application/octet-stream"}
+            st, j = req("127.0.0.1", srv.server_address[1], "POST", "/api/files?name=..%2F..%2Fevil%20shot.png", b"\x89PNG", h)
+            self.assertEqual(st, 200, j)
+            f = Path(j["path"])
+            self.assertEqual((f.name, f.read_bytes()), ("evil shot.png", b"\x89PNG"))
+            self.assertEqual(f.parent.parent, Path(data) / "loft" / "uploads")
+            self.assertEqual(oct(f.stat().st_mode & 0o777), "0o600")
+            self.assertEqual(req("127.0.0.1", srv.server_address[1], "POST", "/api/files?name=x", b"", h)[0], 400)
+            self.assertEqual(req("127.0.0.1", srv.server_address[1], "POST", "/api/files?name=x", b"x", {})[0], 403)
+        finally:
+            srv.shutdown(); srv.server_close()
+            os.environ.pop("XDG_DATA_HOME", None)
+            shutil.rmtree(data, ignore_errors=True)
+
 
 VENV = Path.home() / ".local/share/loft/venv/bin/python"
 
