@@ -25,7 +25,7 @@ access" switch turns it on and the choice is remembered in
 --dev-loopback-devices (OFF by default) also accepts device tokens on
 127.0.0.1, so an Android emulator can reach the server through 10.0.2.2.
 """
-import base64, fcntl, ipaddress, pty, select, signal, socket, struct, termios, hashlib, importlib.machinery, importlib.util, json, os, secrets, subprocess, sys, threading, time
+import base64, re, fcntl, ipaddress, pty, select, signal, socket, struct, termios, hashlib, importlib.machinery, importlib.util, json, os, secrets, subprocess, sys, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
@@ -40,7 +40,7 @@ HERE = Path(__file__).resolve().parent
 PORT = int(_arg("--port", 7717))
 PHONE_PORT = int(_arg("--phone-port", PORT or 7717))
 DEV_LOOPBACK_DEVICES = "--dev-loopback-devices" in sys.argv
-TOKEN = secrets.token_hex(16)
+TOKEN = ""  # set below: kept in the config dir so open windows survive a restart
 CLAUDE = str(HOME / ".local/bin/claude")
 VERSION = "2.1"
 HOSTNAME = socket.gethostname().split(".")[0]
@@ -55,6 +55,36 @@ CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
 LOCK = threading.Lock()  # one mutating action at a time
 VENV_PY = paths.venv_python()
+
+
+def _desktop_token():
+    """The desktop page's token, the same across restarts.
+
+    A new token on every start broke every open Loft window ("bad token", dead
+    terminal) until it was reloaded. It is stored 0600 next to the rest of
+    Loft's config; delete the file to rotate it.
+    """
+    f = CONF_DIR / "desktop-token"
+    try:
+        tok = f.read_text().strip()
+        if re.fullmatch(r"[0-9a-f]{32}", tok):
+            return tok
+    except OSError:
+        pass
+    tok = secrets.token_hex(16)
+    try:
+        CONF_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f.name + ".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(tok + "\n")
+        os.replace(tmp, f)
+    except OSError:
+        pass  # read-only config: fall back to a per-run token
+    return tok
+
+
+TOKEN = _desktop_token()
 
 
 class Voice:
