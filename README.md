@@ -101,7 +101,14 @@ loft app             # open the window (starts the local server if needed)
 loft                 # terminal board
 loft list            # text list; --all includes old finished agents
 loft attach <name>   # open an agent in this terminal with its own account
+loft switch <name> <account> [--now]   # bill an agent to another account
 ```
+
+Switching accounts: the account chip under an agent's title (or the ⋯ menu's "Bills to")
+lists every account with its 5h/7d usage. An idle, waiting or finished agent moves at once
+and continues on the new account at your next reply. A working agent moves after its
+turn (the queued switch shows as a badge you can cancel), or now if you choose to stop
+the turn.
 
 Keys in the app: `N` new task, `B` inbox/board, `J`/`K` move, `T` terminal, `V` speak,
 `,` accounts, `Esc` back.

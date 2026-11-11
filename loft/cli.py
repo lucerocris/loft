@@ -10,6 +10,10 @@
   loft watch [secs]         live text list
   loft attach <id|name>     open an agent with the account that owns it
   loft show <id|name>       full detail + result
+  loft switch <id|name> <account> [--now]
+                            bill an agent (or todo) to another account. A working
+                            agent moves after its turn; --now stops the turn
+  loft switch <id|name> --cancel     drop a queued switch
   loft organize [--yes]     color by account, pin what needs you, give agents with
                             no saved login an explicit one
   loft migrate [--yes]      move agents started under `cswap run N` into ~/.claude/jobs
@@ -489,6 +493,45 @@ def cmd_migrate_config(argv):
 
 # ------------------------------------------------------------------ main
 
+def find_card(cards, q):
+    q = q.lower()
+    hits = [c for c in cards if c["id"] == q] or [c for c in cards if c["id"].startswith(q)] \
+        or [c for c in cards if q in c["name"].lower()]
+    if not hits:
+        raise SystemExit(f"no agent or todo matches '{q}'")
+    if len(hits) > 1:
+        say("ambiguous, pick one:")
+        for c in hits:
+            say(f"  {c['id']}  {c['account'] or '?'}  {c['name']}")
+        raise SystemExit(1)
+    return hits[0]
+
+
+def find_account(q, cfg):
+    acc = A.get(q, cfg) or next((a for a in cfg["accounts"] if a["label"].lower() == q.lower()), None)
+    if not acc:
+        raise SystemExit(f"no account '{q}' (have: {', '.join(a['id'] for a in cfg['accounts'])})")
+    return acc
+
+
+def cmd_switch(argv):
+    from . import board as B
+    now, cancel = "--now" in argv, "--cancel" in argv
+    argv = [a for a in argv if a not in ("--now", "--cancel")]
+    if not argv or (len(argv) < 2 and not cancel):
+        raise SystemExit("usage: loft switch <id|name> <account> [--now]   |   loft switch <id|name> --cancel")
+    card = find_card(B.load_cards(True), argv[0])
+    if cancel:
+        say("switch cancelled" if B.pending_clear(card["id"]) else "nothing was queued"); return 0
+    cfg = A.load()
+    acc = find_account(argv[1], cfg)
+    r = B.switch_account(card, acc["id"], "now" if now else None, cfg)
+    say(r["message"])
+    if r["pending"] and not server_up(DEFAULT_PORT):
+        say("note: Loft applies queued switches; start it (`loft app` or `loft serve`) so this one runs when the turn ends")
+    return 0 if r["ok"] else 1
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     show_all = "--all" in argv
@@ -518,6 +561,8 @@ def main(argv=None):
         cmd_account(rest); return 0
     if cmd == "migrate-config":
         return cmd_migrate_config(rest)
+    if cmd == "switch":
+        return cmd_switch(rest)
     if cmd in ("attach", "a"):
         if not rest: raise SystemExit("usage: loft attach <id|name>")
         C.attach(C.find(C.load(), rest[0]), rest[1:])

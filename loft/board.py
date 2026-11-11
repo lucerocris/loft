@@ -126,6 +126,7 @@ def load_cards(show_all_done):
             "updated": upd, "live": jid in live, "pinned": jid in pins,
             "failed": st.get("state") == "failed",
             "links": [ch.get("href") for ch in (st.get("children") or []) if isinstance(ch, dict) and ch.get("href")],
+            "pending": _pending_view(jid),
         })
     for t in load_todos():
         cwd = os.path.expanduser(t.get("cwd") or "~")
@@ -134,8 +135,14 @@ def load_cards(show_all_done):
             "col": "todo", "state": "todo", "detail": t.get("prompt") or "(no prompt yet)", "result": "",
             "cwd": cwd, "project": Path(cwd).name,
             "updated": C.parse_t(t.get("created") or ""), "live": False, "pinned": False, "failed": False, "links": [],
+            "pending": None,
         })
     return cards
+
+
+def _pending_view(jid):
+    p = pending_read(jid)
+    return {"account": p["account"], "error": p.get("error") or ""} if p else None
 
 
 def sort_cards(cards):
@@ -250,16 +257,124 @@ def act_rename(card, name):
     return "renamed"
 
 
-def act_switch_account(card, to=None):
-    """Move a card to another account: `to` (an id), or the next one in the list."""
-    cfg = A.load()
+# ---------------------------------------------------------------- account switch
+#
+# An agent's login is providerEnv[CLAUDE_SECURESTORAGE_CONFIG_DIR] in its
+# state.json. A cold (re)start reads it from there, but the daemon caches the
+# env of a live worker in daemon/roster.json and an instant respawn on stop
+# (e.g. when notifications are pending) reuses that cached env. So a switch
+# writes the login, stops the idle worker, and checks the roster: a worker
+# that came back on the old login is stopped again, a few times.
+#
+# A running agent is switched after its turn by default: the wish is kept in
+# a sidecar (PENDING in the job dir) and the server's poll loop applies it once
+# the card leaves Working (apply_pending). "now" stops the turn instead.
+
+PENDING = "loft-pending-account.json"
+STOP_TRIES = 4          # stops before giving up on a worker that keeps respawning on the old login
+STOP_WAIT = 5.0         # seconds to wait for one stop to settle
+PENDING_TRIES = 3       # poll-loop attempts before a queued switch is left with its error showing
+
+
+def pending_read(jid):
+    try:
+        p = json.loads((jobs() / jid / PENDING).read_text())
+        return p if isinstance(p, dict) and p.get("account") else None
+    except Exception:
+        return None
+
+
+def pending_write(jid, data):
+    f = jobs() / jid / PENDING
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    tmp.replace(f)
+
+
+def pending_clear(jid):
+    try:
+        (jobs() / jid / PENDING).unlink()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def roster_worker(jid):
+    """The daemon's live worker record for an agent, or None."""
+    try:
+        w = (json.loads((paths.claude_home() / "daemon" / "roster.json").read_text()).get("workers") or {}).get(jid)
+    except Exception:
+        return None
+    if not w or not w.get("pid") or not C.pid_alive(w["pid"]):
+        return None
+    return w
+
+
+def worker_account(w, cfg):
+    """Account id a live worker's cached env bills (None = unknown login)."""
+    acc = A.account_of_env(((w or {}).get("dispatch") or {}).get("env") or {}, cfg)
+    return acc["id"] if acc else None
+
+
+def stop_on(card, target, cfg=None, tries=STOP_TRIES, wait=STOP_WAIT, sleep=None):
+    """Stop an agent's worker so its next start uses the login just saved for `target`.
+
+    Returns None when no worker is left on the old login (gone, or respawned on the
+    new one), else an error string. A worker the daemon respawns instantly from its
+    cached env (roster.json) is stopped again, up to `tries` stops."""
+    cfg = cfg or A.load()
+    sleep = sleep or time.sleep
+    jid = card["id"]
+    w = roster_worker(jid)
+    if not w:
+        return None
+    for _ in range(tries):
+        old_pid = w["pid"]
+        claude("stop", jid, card=card)
+        waited, w = 0.0, roster_worker(jid)
+        while w and w["pid"] == old_pid and waited < wait:
+            sleep(0.2); waited += 0.2
+            w = roster_worker(jid)
+        if not w:
+            return None
+        if w["pid"] == old_pid:
+            return "couldn't stop its worker, try again"
+        if worker_account(w, cfg) == target["id"]:
+            return None          # respawned, but already on the new login
+        sleep(0.5)                # respawned from the cached old env: stop it again
+    return (f"its worker keeps restarting on the old login (tried {tries} times); "
+            f"{target['label']} is saved and takes over the next time it starts")
+
+
+def _save_login(jid, target):
+    def m(st):
+        env = {k: v for k, v in (st.get("providerEnv") or {}).items() if k not in (A.VAR, "CLAUDE_CONFIG_DIR")}
+        return {**st, "providerEnv": A.apply_env(env, target), "color": target["color"]}
+    write_state(jid, m)
+
+
+def _who(target):
+    return target["label"]
+
+
+def switch_account(card, to=None, when=None, cfg=None):
+    """Move a card to another account. Returns {"ok", "message", "pending"}.
+
+    `to` is an account id (None = the next account in the list). `when` only
+    matters for a running agent: "after" (default) queues it for the end of the
+    turn, "now" stops the turn. Picking the account the card already bills
+    cancels a queued switch."""
+    cfg = cfg or A.load()
     accs = cfg["accounts"]
+    out = lambda ok, msg, pend=None: {"ok": ok, "message": msg, "pending": pend}
+    if when not in (None, "after", "now"):
+        return out(False, f"when must be 'after' or 'now', not '{when}'")
     if len(accs) < 2:
-        return "only one account is set up (add one with `loft account add`)"
+        return out(False, "only one account is set up (add one with `loft account add`)")
     if to:
         target = A.get(to, cfg)
         if not target:
-            return f"no account '{to}'"
+            return out(False, f"no account '{to}'")
     else:
         ids = [a["id"] for a in accs]
         cur = ids.index(card["account"]) if card.get("account") in ids else -1
@@ -270,15 +385,66 @@ def act_switch_account(card, to=None):
             if t["id"] == card["id"]:
                 t["account"] = target["id"]
         save_todos(todos)
-    else:
-        err = settle(card)
+        return out(True, f"Now bills {_who(target)}")
+    jid = card["id"]
+    if target["id"] == card.get("account"):
+        if pending_clear(jid):
+            return out(True, f"Cancelled; it stays on {_who(target)}")
+        return out(True, f"Already bills {_who(target)}")
+    running = card.get("col") == "running" or card.get("state") == "working"
+    if running and when != "now":
+        pending_write(jid, {"account": target["id"], "requested": now_utc().isoformat(), "tries": 0})
+        return out(True, f"Bills {_who(target)} after this turn", target["id"])
+    pending_clear(jid)
+    _save_login(jid, target)
+    err = stop_on(card, target, cfg)
+    if err:
+        return out(False, f"Saved {_who(target)}, but {err}")
+    if running:
+        return out(True, f"Stopped the turn. Now bills {_who(target)}; continues there on your next reply")
+    return out(True, f"Now bills {_who(target)} — continues there on your next reply")
+
+
+def act_switch_account(card, to=None, when=None):
+    """Message-only form of switch_account (terminal board, older callers)."""
+    return switch_account(card, to, when)["message"]
+
+
+def apply_pending(cards=None, cfg=None, log=print):
+    """Apply queued switches whose agent is no longer Working. Called by the server's
+    poll loop. Returns the list of (id, result) it acted on."""
+    cfg = cfg or A.load()
+    done = []
+    for sf in jobs().glob(f"*/{PENDING}"):
+        jid = sf.parent.name
+        p = pending_read(jid)
+        if not p:
+            continue
+        card = next((c for c in (cards or []) if c["id"] == jid), None) if cards is not None else None
+        if card is None:
+            card = next((c for c in load_cards(True) if c["id"] == jid), None)
+        if not card:
+            pending_clear(jid); continue
+        if card["col"] == "running" or card.get("state") == "working":
+            continue
+        if p.get("tries", 0) >= PENDING_TRIES:
+            continue                       # gave up; the badge shows the error until cancelled
+        target = A.get(p["account"], cfg)
+        if not target:
+            pending_clear(jid); continue
+        if card.get("account") != target["id"]:
+            _save_login(jid, target)
+        err = stop_on(card, target, cfg)
         if err:
-            return err
-        def m(st):
-            env = {k: v for k, v in (st.get("providerEnv") or {}).items() if k not in (A.VAR, "CLAUDE_CONFIG_DIR")}
-            return {**st, "providerEnv": A.apply_env(env, target), "color": target["color"]}
-        write_state(card["id"], m)
-    return f"now bills {target['label']}" + (f" ({target['email']})" if target.get("email") else "")
+            p.update(tries=p.get("tries", 0) + 1, error=f"Saved {_who(target)}, but {err}")
+            pending_write(jid, p)
+            r = {"ok": False, "message": p["error"], "pending": target["id"]}
+        else:
+            pending_clear(jid)
+            r = {"ok": True, "message": f"Now bills {_who(target)} — continues there on your next reply", "pending": None}
+        log(f"pending switch {jid} -> {target['id']}: {r['message']}")
+        done.append((jid, r))
+    return done
 
 
 def act_archive(card):
@@ -374,7 +540,7 @@ HELP = """
   enter           open agent (claude attach) / start a TODO card
   n               new TODO card (account, folder, title, prompt)
   e               rename card
-  a               move agent/card to the next account (not while working)
+  a               move agent/card to the next account (a working agent moves after its turn)
   s               stop a running agent
   x               archive agent (to ~/.claude/jobs-archive) / delete TODO card
   p               pin / unpin

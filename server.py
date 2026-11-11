@@ -478,6 +478,33 @@ def open_terminal(card):
     return f"opened {card['name']} in a terminal"
 
 
+def switch_route(card, body):
+    """POST /api/cards/<id>/account {account, when?: "after"|"now", cancel?: true}.
+    Desktop and phone alike (same rules)."""
+    if body.get("cancel"):
+        if card["kind"] != "agent":
+            return 400, "Only agents can have a queued switch."
+        return 200, "Switch cancelled" if B.pending_clear(card["id"]) else "Nothing was queued"
+    to, when = body.get("account"), body.get("when")
+    if to is not None and (not isinstance(to, str) or not A.get(to)):
+        return 400, f"No account '{to}'."
+    if when not in (None, "after", "now"):
+        return 400, "when must be 'after' or 'now'."
+    r = B.switch_account(card, to, when)
+    return (200 if r["ok"] else 409), r["message"]
+
+
+def pending_loop(every=3.0):
+    """Apply queued account switches once their agent leaves Working."""
+    while True:
+        time.sleep(every)
+        try:
+            with LOCK:
+                B.apply_pending(log=lambda m: print(m, flush=True))
+        except Exception as e:
+            print(f"pending switch loop: {type(e).__name__}: {e}", flush=True)
+
+
 def act(cid, action, body):
     """Run one card action. Returns (status, message)."""
     if action == "create":
@@ -527,7 +554,7 @@ def act(cid, action, body):
             return 400, "A name can't be empty."
         return 200, B.act_rename(card, name)
     if action == "account":
-        return 200, B.act_switch_account(card, body.get("account"))
+        return switch_route(card, body)
     if action == "pin":
         return 200, B.act_pin(card)
     if action == "archive":
@@ -1011,6 +1038,8 @@ def main():
         on = False
     if on:
         Phone.start()
+    if "--no-pending-loop" not in sys.argv:
+        threading.Thread(target=pending_loop, daemon=True).start()
     srv.serve_forever()
 
 
