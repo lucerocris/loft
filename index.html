@@ -49,7 +49,8 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .btn.quiet { color: var(--t2); } .btn.quiet:hover { background: var(--raised); color: var(--t1); }
 .btn[disabled] { opacity: .4; cursor: not-allowed; }
 .top .btn { margin-left: auto; }
-.filters { display: flex; gap: 2px; padding: 0 12px 6px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 0 12px 6px; }
+.filters .gear { margin-left: auto; width: 28px; height: 28px; color: var(--t3); }
 .filters button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 5px 10px; border-radius: 99px; cursor: pointer; font-size: 12px; }
 .filters button:hover { color: var(--t1); }
 .filters button[aria-pressed="true"] { background: var(--selected); color: var(--t1); }
@@ -67,6 +68,7 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .sd.live { animation: pulse 1.8s ease-out infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 currentColor; } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
 .sd.work.live { color: rgba(91,141,255,.5); } .sd.pers.live { color: rgba(70,192,125,.5); }
+.sd.acc { background: var(--ac); color: color-mix(in srgb, var(--ac) 50%, transparent); }
 .item .tx { flex: 1; min-width: 0; }
 .item .t { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .d { font-size: 12px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -74,7 +76,7 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .item .m { display: flex; align-items: center; gap: 6px; font: 11px var(--mono); color: var(--t3); flex: none; }
 .item .m .dot { width: 6px; height: 6px; }
 .none { padding: 4px 12px 6px; color: var(--t3); font-size: 12px; }
-.usage { display: flex; gap: 16px; padding: 12px 20px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--t2); }
+.usage { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 20px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--t2); }
 .usage span { display: inline-flex; align-items: center; gap: 6px; }
 .usage b { font: 11px var(--mono); color: var(--t3); font-weight: 400; } .usage b.hot { color: var(--needs); }
 
@@ -137,6 +139,39 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .folder input { border: 0; background: none; outline: none; font: 12px var(--mono); color: var(--t2); width: 260px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .err { color: var(--failed); font-size: 12px; } .err:empty { display: none; }
+
+/* accounts + first run */
+.accts { padding: 28px 32px; display: flex; flex-direction: column; gap: 18px; overflow: auto; min-height: 0; }
+.accts h1 { margin: 0; font-size: 18px; font-weight: 600; flex: 1; }
+.accts .lede { margin: 0; color: var(--t2); max-width: 640px; }
+.alist { width: min(100%, 680px); display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.arow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 14px 14px 14px 16px; }
+.arow + .arow { border-top: 1px solid var(--border); }
+.arow > .dot { width: 10px; height: 10px; margin-top: 8px; }
+.arow .nm { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.arow .nm input { font-weight: 500; font-size: 14px; border: 1px solid transparent; background: none; border-radius: var(--r-sm); padding: 2px 6px; margin-left: -7px; field-sizing: content; min-width: 60px; max-width: 100%; }
+.arow .nm input:hover { border-color: var(--border); } .arow .nm input:focus { outline: none; border-color: var(--border-strong); background: var(--canvas); }
+.badge { font: 11px var(--mono); color: var(--t3); border: 1px solid var(--border-strong); border-radius: 99px; padding: 0 7px; }
+.arow .sub { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--t3); min-width: 0; }
+.arow .sub .em { color: var(--t2); } .arow .sub .bad { color: var(--failed); } .arow .sub .warn { color: var(--needs); }
+.arow .dir { grid-column: 2; font: 11px var(--mono); color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arow .acts { grid-column: 3; grid-row: 1 / span 3; display: flex; gap: 4px; align-items: center; }
+.arow .acts .btn { height: 28px; padding: 0 10px; font-size: 12px; }
+.arow .acts .danger { color: var(--failed); } .arow .acts .danger.armed { background: var(--failed); color: var(--on-primary); }
+.sw8 { grid-column: 2; display: flex; gap: 6px; padding-top: 4px; }
+.sw8 button { width: 16px; height: 16px; border-radius: 50%; border: 0; cursor: pointer; padding: 0; outline-offset: 2px; }
+.sw8 button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--t1); }
+.addf { width: min(100%, 680px); display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
+.addf .row input[type=text] { height: 34px; border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--r-sm); padding: 0 10px; outline: none; width: 220px; }
+.addf .row input[type=text]:focus { border-color: var(--t3); }
+.addf .sw8 { padding: 0; }
+.chk { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; } .chk input { margin-top: 3px; accent-color: var(--t1); }
+.chk span { color: var(--t2); } .chk b { color: var(--t1); font-weight: 500; display: block; }
+.lterm { width: min(100%, 760px); height: 300px; position: relative; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--canvas); flex: none; }
+.lterm #xt { position: absolute; inset: 10px 12px; }
+.mini { font: 11px var(--mono); color: var(--t3); }
+.accts .row > svg { width: 28px; height: 28px; flex: none; }
+@media (max-width: 820px) { .accts { padding: 20px 16px; } .arow { grid-template-columns: auto minmax(0, 1fr); } .arow .acts { grid-column: 2; grid-row: auto; flex-wrap: wrap; } .lterm { height: 340px; } }
 
 /* empty */
 .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
@@ -259,7 +294,8 @@ let S = { cards: [], usage: {}, dirs: [], voice: false }, loaded = false;
 let acct = store.get("loft.acct") || "";            // "" | work | personal
 let sel = new URL(location.href).searchParams.get("a") || null;   // card id | "new" | null
 let showDone = false, termView = {}, prevNeeds = null, drafts = {};
-let newAcct = store.get("loft.newAcct") || "work";
+let newAcct = store.get("loft.newAcct") || "";
+let AC = null, adding = false, loginFor = null, loginEnded = false;    // accounts screen: listing, add form open, account signing in
 let view = new URL(location.href).searchParams.get("v") || store.get("loft.view") || "inbox";   // inbox | board
 let dragId = null, boardStale = false, startingIds = new Set();
 
@@ -275,8 +311,13 @@ async function act(id, a, body = {}, quiet) { try { const r = await api(`/api/ca
 function ago(iso) { if (!iso) return ""; const s = (Date.now() - Date.parse(iso)) / 1000; if (s < 60) return "now"; for (const [u, n] of [["d", 86400], ["h", 3600], ["m", 60]]) if (s >= n) return Math.floor(s / n) + u; }
 const icons = () => lucide.createIcons({ attrs: { class: "ic" } });
 const statusOf = c => c.failed ? "failed" : c.col;
-const acctCls = c => c.work ? "work" : "pers";
-const visible = () => S.cards.filter(c => !acct || (acct === "work") === c.work);
+const OTHER = { id: null, label: "Other login", hex: "#6E737B", email: "" };
+const accById = id => (S.accounts || []).find(a => a.id === id);
+const accOf = c => accById(c.account) || OTHER;
+const accTitle = a => a.label + (a.email ? " · " + a.email : "");
+const dotH = (a, cls = "") => `<span class="dot ${cls}" style="background:${a.hex}" title="${esc(accTitle(a))}"></span>`;
+const accColor = c => `style="color:${accOf(c).hex}"`;
+const visible = () => S.cards.filter(c => !acct || !accById(acct) || c.account === acct);
 const byTime = l => l.slice().sort((a, b) => (b.pinned - a.pinned) || (Date.parse(b.updated || 0) - Date.parse(a.updated || 0)));
 const needsList = () => byTime(visible().filter(c => c.col === "needs"));
 const cardOf = id => S.cards.find(c => c.id === id);
@@ -295,12 +336,12 @@ function renderInbox() {
     `<button data-view="${k}" aria-pressed="${view === k}" title="${l} (B switches)">${l}</button>`).join(""));
   const v = visible(), by = k => byTime(v.filter(c => c.col === k));
   const item = c => {
-    const s = statusOf(c), dotCls = s === "running" ? `${acctCls(c)} live` : s;
+    const s = statusOf(c), dotCls = s === "running" ? "acc live" : s;
     const d = c.kind === "todo" ? (noPrompt(c) ? "Not started" : c.detail) : (c.col === "done" && c.result ? c.result : c.detail) || "";
     return `<div class="item ${s}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}">
-      <span class="sd ${dotCls}" title="${{ needs: "Needs you", running: "Working", todo: "Todo", done: "Done", failed: "Failed" }[s]}"></span>
+      <span class="sd ${dotCls}"${s === "running" ? ` style="--ac:${accOf(c).hex}"` : ""} title="${{ needs: "Needs you", running: "Working", todo: "Todo", done: "Done", failed: "Failed" }[s]}"></span>
       <div class="tx"><div class="t">${esc(c.name)}</div><div class="d">${esc(d)}</div></div>
-      <div class="m">${ago(c.updated)}<span class="dot ${acctCls(c)}" title="${c.work ? "Work · Ritchie" : "Personal · lucerocris"}"></span></div></div>`;
+      <div class="m">${ago(c.updated)}${dotH(accOf(c))}</div></div>`;
   };
   const sec = (label, list, cls, extra = "") => `<div class="sec ${cls || ""}">${label} <span>${list.length}</span>${extra}</div>`;
   const needs = by("needs"), run = by("running"), todo = by("todo"), done = by("done");
@@ -312,14 +353,16 @@ function renderInbox() {
   $("#usage").innerHTML = usageHTML();
 }
 function filtersHTML() {
-  return [["", "All"], ["work", "Work"], ["personal", "Personal"]].map(([k, l]) =>
-    `<button data-acct="${k}" aria-pressed="${acct === k}">${k ? `<span class="dot ${k === "work" ? "work" : "pers"}"></span>` : ""}${l}</button>`).join("");
+  const cur = accById(acct) ? acct : "", accs = S.accounts || [];
+  const btns = accs.length > 1 ? [["", "All"], ...accs.map(a => [a.id, a.label])].map(([k, l]) =>
+    `<button data-acct="${esc(k)}" aria-pressed="${cur === k}"${k ? ` title="${esc(accTitle(accById(k)))}"` : ""}>${k ? dotH(accById(k)) : ""}${esc(l)}</button>`).join("") : "";
+  return btns + `<button class="ibtn gear" data-accounts title="Accounts (,)" aria-label="Accounts"><i data-lucide="settings-2" class="ic"></i></button>`;
 }
 function usageHTML() {
-  const u = S.usage || {}, num = x => x && x !== "—" && !isNaN(+x) ? +x : null;
-  return [["work", "Work"], ["personal", "Personal"]].map(([k, l]) => {
-    const w = num(u[k]?.seven), f = num(u[k]?.five); const parts = [f != null ? `5h ${f}%` : "", w != null ? `7d ${w}%` : ""].filter(Boolean).join(" · ");
-    return `<span><span class="dot ${k === "work" ? "work" : "pers"}"></span>${l}<b class="${Math.max(w || 0, f || 0) >= 85 ? "hot" : ""}">${parts || "—"}</b></span>`;
+  const u = S.usage || {}, num = x => x != null && x !== "" && x !== "—" && !isNaN(+x) ? +x : null;
+  return (S.accounts || []).map(a => {
+    const w = num(u[a.id]?.seven), f = num(u[a.id]?.five); const parts = [f != null ? `5h ${f}%` : "", w != null ? `7d ${w}%` : ""].filter(Boolean).join(" · ");
+    return `<span title="${esc(accTitle(a))}${u[a.id]?.error ? " · " + esc(u[a.id].error) : ""}">${dotH(a)}${esc(a.label)}<b class="${Math.max(w || 0, f || 0) >= 85 ? "hot" : ""}">${parts || "—"}</b></span>`;
   }).join("");
 }
 
@@ -343,11 +386,11 @@ function renderBoard() {
   const card = c => {
     const s = statusOf(c), todo = c.kind === "todo", proj = c.project === "~" ? "home" : c.project;
     const st = todo ? (noPrompt(c) ? "Not started" : c.detail) : (c.col === "done" && c.result ? c.result : c.detail) || "";
-    const live = s === "running" ? `<span>·</span><span class="${c.work ? "st-work" : "st-pers"}">live</span>` : "";
+    const live = s === "running" ? `<span>·</span><span ${accColor(c)}>live</span>` : "";
     return `<div class="bcard ${s}${startingIds.has(c.id) ? " starting" : ""}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}"${todo ? ` draggable="true" title="Drag to Working to start"` : ""}>
       <div class="r1"><span class="t">${esc(c.name)}</span><span class="age">${ago(c.updated)}</span></div>
       <div class="s">${esc(s === "failed" && !/^failed/i.test(st) ? "Failed · " + st : st)}</div>
-      <div class="m"><span class="dot ${acctCls(c)}" title="${c.work ? "Work · Ritchie" : "Personal · lucerocris"}"></span><span class="f">${esc(proj)}</span>${live}</div></div>`;
+      <div class="m">${dotH(accOf(c))}<span class="f">${esc(proj)}</span>${live}</div></div>`;
   };
   const EMPTY = { todo: ["No todos", "Press N to write one, or save a task to Todo."], running: ["Nothing running", "Drag a todo here to start it."],
     needs: ["Nothing waiting on you", "You'll get a notification when one comes back."], done: ["Nothing finished yet", "Finished agents land here."] };
@@ -383,18 +426,22 @@ async function startTodo(id) {
 
 /* ---------- pane ---------- */
 let term = null, fit = null, ws = null, wsFor = null;
-function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.work, !!termView[c.id], c.kind].join("|") : sel || "none"; }
+function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], c.kind].join("|") : sel || "none"; }
+const SCREENS = ["new", "accounts", "setup"];
 function renderPane() {
-  const p = $("#pane"); let c = sel && sel !== "new" ? cardOf(sel) : null;
-  if (sel && sel !== "new" && !c && loaded) { sel = null; }
+  if (loaded && S.setup && sel !== "accounts") sel = "setup";        // first run: no accounts.json yet
+  if (sel === "setup" && loaded && !S.setup) sel = "accounts";
+  const p = $("#pane"); let c = sel && !SCREENS.includes(sel) ? cardOf(sel) : null;
+  if (sel && !SCREENS.includes(sel) && !c && loaded) { sel = null; }
   if (!sel && loaded && view !== "board") { const n = needsList()[0]; if (n) { sel = n.id; c = n; } }
   $("#app").classList.toggle("open", !!sel);
   $("#app").classList.toggle("board", view === "board");
-  const key = sel === "new" ? "new" : paneKey(c);
+  const key = SCREENS.includes(sel) ? sel : paneKey(c);
   if (p.dataset.key === key) { if (c) refreshPane(c); return; }   // keep typing / terminal alive
   p.dataset.key = key;
-  if (sel !== "new" && (!c || c.kind === "todo" || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
+  if (sel !== "new" && !(sel === "accounts" && loginFor && wsFor === "login-" + loginFor) && (!c || c.kind === "todo" || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
   if (sel === "new") return paneNew(p);
+  if (sel === "accounts" || sel === "setup") return paneAccounts(p);
   if (!c) return paneQuiet(p);
   if (c.kind === "todo") return paneTodo(p, c);
   if (c.col === "needs" && !termView[c.id]) return paneAsk(p, c);
@@ -402,11 +449,11 @@ function renderPane() {
 }
 function head(c, actions = true) {
   const s = statusOf(c);
-  const st = { needs: ["Needs you", "st-needs"], running: ["Working", c.work ? "st-work" : "st-pers"], todo: ["Todo", "st-muted"], done: ["Done", "st-muted"], failed: ["Failed", "st-failed"] }[s];
+  const st = { needs: ["Needs you", "st-needs"], running: ["Working", "st-acc"], todo: ["Todo", "st-muted"], done: ["Done", "st-muted"], failed: ["Failed", "st-failed"] }[s];
   const proj = c.project === "~" ? "home" : c.project;
   return `<div class="head"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
     <div class="ti"><label class="sr-only" hidden for="title">Name</label><input class="title" id="title" value="${esc(c.name)}" spellcheck="false" title="Click to rename">
-    <div class="meta"><span class="dot ${acctCls(c)}"></span>${c.work ? "Work" : "Personal"}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel">${st[0]}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span></div></div>
+    <div class="meta">${dotH(accOf(c))}${esc(accOf(c).label)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span></div></div>
     ${actions && c.col === "needs" ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
     <button class="ibtn" data-menu aria-label="More actions" title="More"><i data-lucide="ellipsis" class="ic"></i></button></div>`;
 }
@@ -432,22 +479,23 @@ async function loadPeek(c) {
 }
 function paneTerm(p, c) {
   p.innerHTML = `${head(c)}<div class="term" id="termBox"><div id="xt"></div><div class="cover" id="cover" hidden></div>${S.voice ? `<button class="mic tmic" data-mic="term" title="Speak into the terminal (V)" aria-label="Speak"><i data-lucide="mic" class="ic"></i></button>` : ""}</div>
-    <div class="tbar"><span class="${c.work ? "st-work" : "st-pers"}">${c.work ? "Work · Ritchie" : "Personal · lucerocris"}</span><span>type straight into the agent</span>${S.voice ? "<span>V speaks</span>" : ""}<span>Shift+Esc leaves the terminal</span></div>
+    <div class="tbar"><span ${accColor(c)}>${esc(accTitle(accOf(c)))}</span><span>type straight into the agent</span>${S.voice ? "<span>V speaks</span>" : ""}<span>Shift+Esc leaves the terminal</span></div>
     <div class="voice-note" id="vnote" hidden style="padding:0 32px 8px"></div>`;
   icons(); mountTerm(c.id);
 }
 function paneTodo(p, c) {
   p.innerHTML = `${head(c, false)}<div class="body"><div class="col">
     <div class="bigbox"><textarea id="tprompt" placeholder="What should the agent do?">${esc(noPrompt(c) ? "" : c.detail)}</textarea>${micBtn("tprompt")}</div>
-    <div class="row"><button class="btn primary" data-start><i data-lucide="play" class="ic"></i>Start on ${c.work ? "Work" : "Personal"}</button><span class="hint" style="margin:0">Ctrl+Enter starts · in ${esc(c.cwd)}</span></div>
+    <div class="row"><button class="btn primary" data-start><i data-lucide="play" class="ic"></i>Start on ${esc(accOf(c).label)}</button><span class="hint" style="margin:0">Ctrl+Enter starts · in ${esc(c.cwd)}</span></div>
     <div class="voice-note" id="vnote" hidden></div></div></div>`;
   icons();
 }
 function paneNew(p) {
-  const dir = store.get("loft.dir." + newAcct) || S.dirs.find(d => (newAcct === "work") === d.includes("evotech")) || "";
+  if (!accById(newAcct)) newAcct = accById(acct) ? acct : (S.defaultAccount || S.accounts?.[0]?.id || "");
+  const dir = store.get("loft.dir." + newAcct) || S.dirs[0] || "";
   p.innerHTML = `<div class="new"><div class="row"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button><h1>New task</h1></div>
     <div class="bigbox"><textarea id="nprompt" placeholder="What should an agent do?${S.voice ? " Type, or press V and say it." : ""}">${esc(drafts.new || "")}</textarea>${micBtn("nprompt")}</div>
-    <div class="opts"><div class="seg" role="group" aria-label="Account">${[["work", "Work"], ["personal", "Personal"]].map(([k, l]) => `<button data-newacct="${k}" aria-pressed="${newAcct === k}"><span class="dot ${k === "work" ? "work" : "pers"}"></span>${l}</button>`).join("")}</div>
+    <div class="opts"><div class="seg" role="group" aria-label="Account">${(S.accounts || []).map(a => `<button data-newacct="${esc(a.id)}" aria-pressed="${newAcct === a.id}" title="${esc(accTitle(a))}">${dotH(a)}${esc(a.label)}</button>`).join("")}</div>
       <label class="folder" title="Project folder"><i data-lucide="folder" class="ic"></i><input id="ndir" list="dirs" value="${esc(dir)}" spellcheck="false" aria-label="Folder"><datalist id="dirs">${S.dirs.map(d => `<option value="${esc(d)}">`).join("")}</datalist></label></div>
     <div class="row"><button class="btn primary" id="nStart"><i data-lucide="play" class="ic"></i>Start</button><button class="btn quiet" id="nTodo">Save to Todo</button><span class="hint" style="margin:0">Ctrl+Enter starts · the title is written for you${S.voice ? ` · say "…start it" at the end to start hands-free` : ""}</span></div>
     <div class="err" id="nerr"></div><div class="voice-note" id="vnote" hidden></div></div>`;
@@ -466,8 +514,95 @@ function refreshPane(c) {   // light update without rebuilding (keeps drafts, fo
 }
 function grow(t) { if (!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; }
 
+/* ---------- accounts + first run ---------- */
+async function loadAccounts() { try { AC = await api("/api/accounts"); } catch (e) { toast(e.message, true); } if (SCREENS.includes(sel) && sel !== "new") { $("#pane").dataset.key = ""; renderPane(); } }
+const swatches = (cur, attr) => `<div class="sw8" role="group" aria-label="Color">${(AC?.colors || []).map(c => `<button ${attr}="${c.name}" aria-pressed="${cur === c.name}" style="background:${c.hex}" title="${c.name}" aria-label="${c.name}"></button>`).join("")}</div>`;
+function paneAccounts(p) {
+  if (!AC) { p.innerHTML = `<div class="empty"><p>Loading accounts…</p></div>`; icons(); loadAccounts(); return; }
+  if (sel === "setup" && !AC.configured) return paneSetup(p);
+  const fmt = u => [u?.five != null ? `5h ${u.five}%` : "", u?.seven != null ? `7d ${u.seven}%` : ""].filter(Boolean).join(" · ");
+  const row = a => {
+    const st = a.pending ? `<span class="warn">Not signed in yet</span>` : a.status === "ok" ? `<span>Signed in</span>` : a.status === "expired" ? `<span class="warn" title="Claude refreshes it the next time an agent runs on this account">Token expired</span>` : `<span class="bad" title="${esc(a.statusText)}">Not signed in</span>`;
+    const login = loginFor === a.id;
+    return `<div class="arow" data-acc="${esc(a.id)}">${dotH(a)}
+      <div class="nm"><input value="${esc(a.label)}" data-rename="${esc(a.id)}" aria-label="Account name" spellcheck="false">${a.default ? `<span class="badge" title="New tasks and agents with no saved login use it">default</span>` : ""}${a.source ? `<span class="badge">${esc(a.source)}</span>` : ""}</div>
+      <div class="sub"><span class="em">${esc(a.email || "no email yet")}</span>${st}${fmt(a.usage) ? `<span>${fmt(a.usage)}</span>` : ""}</div>
+      <div class="dir" title="${esc(a.keychain || a.loginDir)}">${esc(a.defaultLogin ? `default login (${AC.platform === "macos" ? "Keychain" : a.loginDir})` : a.loginDir)}</div>
+      ${swatches(a.color, `data-acolor="${esc(a.id)}" data-c`)}
+      <div class="acts">${a.status !== "ok" || a.pending ? `<button class="btn secondary" data-login="${esc(a.id)}" ${login ? "disabled" : ""}>Sign in</button>` : ""}
+        ${a.default ? "" : `<button class="btn quiet" data-adefault="${esc(a.id)}">Make default</button>`}
+        ${AC.accounts.length > 1 ? `<button class="btn quiet danger" data-aremove="${esc(a.id)}"><span>Remove</span></button>` : ""}</div></div>`;
+  };
+  p.innerHTML = `<div class="accts"><div class="row"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button><h1>Accounts</h1>
+      <button class="btn quiet" data-organize title="Give every agent an explicit login and its account's color"><i data-lucide="wand-sparkles" class="ic"></i>Organize agents</button></div>
+    <p class="lede">Each agent runs on one Claude account and keeps it when it restarts. Colors show which account an agent bills.</p>
+    <div class="alist">${AC.accounts.map(row).join("")}</div>
+    ${loginFor ? `<div class="label">Signing in ${esc(AC.accounts.find(a => a.id === loginFor)?.label || "")} · finish in the browser, then come back</div><div class="lterm" id="termBox"><div id="xt"></div><div class="cover" id="cover" hidden></div></div>
+      <div class="row"><button class="btn secondary" data-identify="${esc(loginFor)}">I've signed in</button><button class="btn quiet" data-cancel-login>Cancel</button><span class="mini">Loft reads the account's email from its new login.</span></div>` : ""}
+    ${adding ? `<div class="addf"><div class="label">Add an account</div>
+      <div class="row"><input type="text" id="aname" placeholder="Name, e.g. Work" maxlength="40" spellcheck="false">${swatches(AC.newColor, "data-newcolor")}</div>
+      <div class="row"><button class="btn primary" data-addgo><i data-lucide="log-in" class="ic"></i>Sign in with the browser</button><button class="btn quiet" data-addcancel>Cancel</button></div>
+      <span class="mini">Loft keeps this login in its own folder and runs claude auth login for it below. Nothing is shared with your other accounts.</span><div class="err" id="aerr"></div></div>`
+      : `<div><button class="btn secondary" data-addacc ${loginFor ? "disabled" : ""}><i data-lucide="plus" class="ic"></i>Add account</button></div>`}
+    ${AC.cswap?.length ? `<div class="addf"><div class="label">From claude-swap</div><p class="lede" style="font-size:12px">${AC.cswap.map(esc).join("<br>")}</p>
+      <div><button class="btn secondary" data-cswap><i data-lucide="download" class="ic"></i>Import ${AC.cswap.length === 1 ? "it" : `all ${AC.cswap.length}`}</button> <span class="mini">uses each profile's login where it is; nothing is copied</span></div></div>` : ""}
+  </div>`;
+  icons();
+  if (loginFor && loginEnded && term) { $("#xt").appendChild(term.element); requestAnimationFrame(refit); }   // finished: keep its output, don't rerun
+  else if (loginFor) mountTerm("login-" + loginFor, { onClose: () => { loginEnded = true; checkLogin(loginFor); } });
+  if (adding) setTimeout(() => $("#aname")?.focus(), 0);
+}
+function paneSetup(p) {
+  const cs = AC.cswap || [];
+  p.innerHTML = `<div class="accts"><div class="row" style="gap:12px">${MARK()}<h1 style="flex:none">Set up Loft</h1></div>
+    <p class="lede">Loft shows every Claude Code background agent on this machine and runs each one on the Claude account you pick. Start with the login this machine already has; add more accounts after.</p>
+    ${AC.legacy ? `<label class="chk"><input type="checkbox" id="smig" checked><div><b>Bring over the Work / Personal setup</b><span>Found the older two-account setup. Keeps its logins, colors and existing agents as they are.</span></div></label>` : ""}
+    <div class="addf" id="sfirst"><div class="label">Your first account</div>
+      <div class="sub" style="color:var(--t2)">${AC.defaultEmail ? `Signed in as <b style="font-weight:500;color:var(--t1)">${esc(AC.defaultEmail)}</b>` : `No Claude login found yet. You can sign in on the next screen.`}</div>
+      <div class="row"><input type="text" id="slabel" value="Personal" maxlength="40" aria-label="Account name" spellcheck="false">${swatches(AC.setupColor || "green", "data-scolor")}</div></div>
+    ${cs.length ? `<label class="chk"><input type="checkbox" id="scswap" checked><div><b>Also use ${cs.length} claude-swap profile${cs.length > 1 ? "s" : ""}</b><span>${cs.map(esc).join("<br>")}</span></div></label>` : ""}
+    <div class="row"><button class="btn primary" data-setup><i data-lucide="check" class="ic"></i>Save and continue</button><span class="mini">writes accounts.json; change anything later under Accounts</span></div>
+    <div class="err" id="serr"></div></div>`;
+  icons();
+  const syncMig = () => { const m = $("#smig"); if (m) $("#sfirst").style.display = m.checked ? "none" : ""; }; syncMig(); $("#smig")?.addEventListener("change", syncMig);
+}
+async function checkLogin(id) {
+  try { const r = await api(`/api/accounts/${id}/identify`, {}); toast(r.message); loginFor = null; loginEnded = false; disconnectTerm(); }
+  catch (e) { toast(e.message, true); }
+  await loadAccounts();
+}
+async function accAct(id, action, body = {}) { try { const r = await api(`/api/accounts/${id}/${action}`, body); if (r.message && action !== "rename") toast(r.message); } catch (e) { toast(e.message, true); } await loadAccounts(); }
+async function accountsClick(t) {
+  if (t.dataset.acolor) return accAct(t.dataset.acolor, "color", { color: t.dataset.c });
+  if (t.hasAttribute("data-newcolor")) { AC.newColor = t.getAttribute("aria-label"); document.querySelectorAll("[data-newcolor]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
+  if (t.hasAttribute("data-scolor")) { AC.setupColor = t.getAttribute("aria-label"); document.querySelectorAll("[data-scolor]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
+  if (t.dataset.adefault) return accAct(t.dataset.adefault, "default");
+  if (t.dataset.aremove) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.querySelector("span").textContent = "Remove?"; return; } return accAct(t.dataset.aremove, "remove"); }
+  if (t.dataset.login) { loginFor = t.dataset.login; loginEnded = false; adding = false; $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.dataset.identify) return checkLogin(t.dataset.identify);
+  if (t.hasAttribute("data-cancel-login")) { loginFor = null; loginEnded = false; disconnectTerm(); return loadAccounts(); }
+  if (t.hasAttribute("data-addacc")) { adding = true; const used = new Set(AC.accounts.map(a => a.color)); AC.newColor = (AC.colors.find(c => !used.has(c.name)) || AC.colors[0]).name; $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.hasAttribute("data-addcancel")) { adding = false; $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.hasAttribute("data-addgo")) {
+    const label = $("#aname").value.trim(); if (!label) { $("#aerr").textContent = "Give it a name first."; return $("#aname").focus(); }
+    t.disabled = true;
+    try { const r = await api("/api/accounts/add", { label, color: AC.newColor }); adding = false; loginFor = r.id; loginEnded = false; await loadAccounts(); }
+    catch (e) { $("#aerr").textContent = e.message; t.disabled = false; }
+    return;
+  }
+  if (t.hasAttribute("data-cswap")) { t.disabled = true; try { const r = await api("/api/accounts/import-cswap", {}); toast(r.message); } catch (e) { toast(e.message, true); } return loadAccounts(); }
+  if (t.hasAttribute("data-organize")) { t.disabled = true; try { const r = await api("/api/accounts/organize", {}); toast(r.message); } catch (e) { toast(e.message, true); } t.disabled = false; return; }
+  if (t.hasAttribute("data-setup")) {
+    t.disabled = true;
+    try {
+      const r = await api("/api/accounts/setup", { migrate: !!$("#smig")?.checked, label: $("#slabel")?.value.trim(), color: AC.setupColor || "green", importCswap: !!$("#scswap")?.checked });
+      toast(r.message); AC = r; S = await api("/api/state"); setSel("accounts");
+    } catch (e) { $("#serr").textContent = e.message; t.disabled = false; }
+  }
+}
+
 /* ---------- terminal ---------- */
-function mountTerm(id) {
+function mountTerm(id, opt = {}) {
   if (!term) {
     term = new Terminal({ fontFamily: '"Geist Mono", "JetBrains Mono", monospace', fontSize: 13, lineHeight: 1.2, cursorBlink: true, scrollback: 5000,
       theme: { background: "#0F1012", foreground: "#EDEEF0", cursor: "#EDEEF0", selectionBackground: "rgba(91,141,255,.35)", black: "#1C1F23", brightBlack: "#6E737B",
@@ -477,16 +612,16 @@ function mountTerm(id) {
     term.attachCustomKeyEventHandler(e => { if (e.type === "keydown" && e.key === "Escape" && e.shiftKey) { leaveTerm(); return false; } return true; });
   }
   const host = $("#xt"); if (term.element) host.appendChild(term.element); else term.open(host);
-  new ResizeObserver(refit).observe($("#termBox"));
+  new ResizeObserver(refit).observe($("#termBox") || $("#xt"));
   if (wsFor === id && ws && ws.readyState <= 1) { requestAnimationFrame(() => { refit(); term.focus(); }); return; }
   disconnectTerm(); term.reset(); wsFor = id;
   cover(`<div><i data-lucide="loader" class="ic"></i>Opening the session…</div>`);
   const sock = new WebSocket(`ws://${location.host}/ws/term/${id}?t=${TOKEN}`); sock.binaryType = "arraybuffer"; ws = sock;
   sock.onopen = () => { cover(null); requestAnimationFrame(() => { refit(); term.focus(); }); };
   sock.onmessage = e => term.write(new Uint8Array(e.data));
-  sock.onclose = () => { if (sock !== ws) return; ws = null; cover(`<div>Session closed<button class="btn secondary" data-reconnect>Reconnect</button></div>`); };
+  sock.onclose = () => { if (sock !== ws) return; ws = null; if (opt.onClose) return opt.onClose(); cover(`<div>Session closed<button class="btn secondary" data-reconnect>Reconnect</button></div>`); };
 }
-function refit() { if (!term || !$("#termBox")) return; try { fit.fit(); } catch {} if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })); }
+function refit() { if (!term || !($("#termBox") || $("#xt"))) return; try { fit.fit(); } catch {} if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows })); }
 function cover(h) { const c = $("#cover"); if (!c) return; if (h) { c.innerHTML = h; c.hidden = false; icons(); } else c.hidden = true; }
 function disconnectTerm() { if (ws) { const w = ws; ws = null; try { w.close(); } catch {} } wsFor = null; }
 function leaveTerm() { const c = cardOf(sel); if (c && c.col === "needs") { termView[c.id] = false; render(); } else term?.blur(); }
@@ -554,8 +689,8 @@ async function waitOpen(id) { for (let i = 0; i < 12 && !cardOf(id); i++) { try 
 function openMenu(btn) {
   const c = cardOf(sel); if (!c) return; const m = $("#menu"), running = c.col === "running", todo = c.kind === "todo";
   m.innerHTML = `${!todo ? `<button data-do="pin"><i data-lucide="${c.pinned ? "pin-off" : "pin"}" class="ic"></i>${c.pinned ? "Unpin" : "Pin to top"}</button>` : ""}
-    <button data-do="account" ${running ? "disabled title='Stop it first'" : ""}><span class="dot ${c.work ? "pers" : "work"}" style="margin:0 4px"></span>Move to ${c.work ? "Personal" : "Work"}</button>
-    ${!todo ? `<button data-do="open"><i data-lucide="app-window" class="ic"></i>Open in Konsole</button>` : ""}
+    ${(S.accounts || []).filter(a => a.id !== c.account).map(a => `<button data-do="account" data-to="${esc(a.id)}" ${running ? "disabled title='Stop it first'" : `title="${esc(accTitle(a))}"`}><span class="dot" style="margin:0 4px;background:${a.hex}"></span>Move to ${esc(a.label)}</button>`).join("")}
+    ${!todo ? `<button data-do="open"><i data-lucide="app-window" class="ic"></i>Open in terminal</button>` : ""}
     ${running ? `<button data-do="stop"><i data-lucide="square" class="ic"></i>Stop</button>` : ""}
     <hr><button class="danger" data-do="archive" ${running ? "disabled title='Stop it first'" : ""}><i data-lucide="${todo ? "trash-2" : "archive"}" class="ic"></i><span>${todo ? "Delete" : "Archive"}</span></button>`;
   const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = (innerWidth - r.right) + "px"; m.hidden = false; icons();
@@ -567,7 +702,7 @@ function render() { renderInbox(); renderBoard(); renderPane(); const n = S.card
 function notifyNew() {
   const now = new Set(S.cards.filter(c => c.col === "needs").map(c => c.id));
   if (prevNeeds && "Notification" in window && Notification.permission === "granted")
-    for (const id of now) if (!prevNeeds.has(id)) { const c = cardOf(id); const n = new Notification(`${c.work ? "Work" : "Personal"} · ${c.name}`, { body: c.detail || "Needs you", tag: id }); n.onclick = () => { window.focus(); setSel(id); }; }
+    for (const id of now) if (!prevNeeds.has(id)) { const c = cardOf(id); const n = new Notification(`${accOf(c).label} · ${c.name}`, { body: c.detail || "Needs you", tag: id }); n.onclick = () => { window.focus(); setSel(id); }; }
   prevNeeds = now;
 }
 function move(dir) {
@@ -582,6 +717,8 @@ document.addEventListener("click", async e => {
   if (!e.target.closest("#menu") && !e.target.closest("[data-menu]")) closeMenu();
   const t = e.target.closest("button, .item, .bcard"); if (!t) return;
   if (t.matches(".item, .bcard")) return setSel(t.dataset.id);
+  if (t.hasAttribute("data-accounts")) { AC = null; return setSel("accounts"); }
+  if (t.closest(".accts") && !t.hasAttribute("data-back")) return accountsClick(t);
   if (t.dataset.view) return setView(t.dataset.view);
   if (t.dataset.acct !== undefined) { acct = t.dataset.acct; store.set("loft.acct", acct); return render(); }
   if (["newBtn", "newBtn2", "newBtn3", "newBtn4"].includes(t.id)) return setSel("new");
@@ -600,7 +737,7 @@ document.addEventListener("click", async e => {
   if (t.dataset.do) {
     const a = t.dataset.do;
     if (a === "archive" && !t.classList.contains("armed")) { t.classList.add("armed"); t.querySelector("span").textContent = "Click again to confirm"; return; }
-    closeMenu(); const id = sel; const r = await act(id, a); if (r && a === "archive") setSel(null); else { $("#pane").dataset.key = ""; render(); }
+    closeMenu(); const id = sel; const r = await act(id, a, t.dataset.to ? { account: t.dataset.to } : {}); if (r && a === "archive") setSel(null); else { $("#pane").dataset.key = ""; render(); }
   }
 });
 document.addEventListener("input", e => {
@@ -608,6 +745,7 @@ document.addEventListener("input", e => {
   if (e.target.id === "nprompt") drafts.new = e.target.value;
 });
 document.addEventListener("focusout", e => {
+  if (e.target.dataset?.rename) { const a = AC?.accounts.find(x => x.id === e.target.dataset.rename), v = e.target.value.trim(); if (a && v && v !== a.label) accAct(a.id, "rename", { label: v }); else if (a) e.target.value = a.label; return; }
   const c = cardOf(sel);
   if (e.target.id === "title" && c) { const v = e.target.value.trim(); if (v && v !== c.name) act(c.id, "rename", { name: v }); else e.target.value = c.name; }
   if (e.target.id === "tprompt" && c?.kind === "todo") { const v = e.target.value.trim(); if (v !== (noPrompt(c) ? "" : c.detail)) api(`/api/cards/${c.id}/prompt`, { prompt: v }).catch(() => {}); }
@@ -620,14 +758,18 @@ document.addEventListener("keydown", e => {
   if (ae?.id === "nprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return submitNew(true); }
   if (ae?.id === "tprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $("[data-start]")?.click(); }
   if (ae?.id === "title" && e.key === "Enter") return ae.blur();
+  if (ae?.dataset?.rename && e.key === "Enter") return ae.blur();
+  if (ae?.id === "aname" && e.key === "Enter") return $("[data-addgo]")?.click();
   if (e.key === "Escape") { if (!$("#menu").hidden) return closeMenu(); if (rec?.state === "recording") return rec.stop(); if (typing && ae.id !== "reply") return ae.blur();
-    if (sel === "new" || (view === "board" && sel)) { const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
+    if (sel === "setup") return;
+    if (sel === "new" || sel === "accounts" || (view === "board" && sel)) { if (sel === "accounts") { loginFor = null; loginEnded = false; adding = false; } const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
   if (ae?.matches?.("#cols .bcard") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); return setSel(ae.dataset.id); }
   // V speaks — also while the reply box is empty and focused
   if ((e.key === "v" || e.key === "V") && !e.ctrlKey && !e.metaKey && !e.altKey && (!typing || (ae.id === "reply" && !ae.value) || (ae.id === "nprompt" && !ae.value))) { const tg = voiceTarget(); if (tg) { e.preventDefault(); return toggleVoice(tg); } }
   if (typing && !((ae.id === "reply" || ae.id === "nprompt") && !ae.value)) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === "n") { e.preventDefault(); setSel("new"); }
+  if (e.key === "n" && sel !== "setup") { e.preventDefault(); setSel("new"); }
+  else if (e.key === "," && sel !== "setup") { e.preventDefault(); AC = null; setSel("accounts"); }
   else if (e.key === "b") { e.preventDefault(); setView(view === "board" ? "inbox" : "board"); }
   else if (view === "board" && /^[jkhls]$|^Arrow/.test(e.key)) {
     e.preventDefault(); if (e.key === "s") return startTodo(sel);
@@ -650,7 +792,7 @@ document.addEventListener("dragover", e => {
   if (!dragId) return; const over = e.target.closest?.('.bcol[data-col="running"]'), w = workCol();
   if (over) { e.preventDefault(); e.dataTransfer.dropEffect = "move";
     if (!w.classList.contains("drop")) { const c = cardOf(dragId); w.classList.add("drop");
-      w.querySelector(".bh").insertAdjacentHTML("afterend", `<div class="slot"><i data-lucide="play" class="ic"></i>Drop to start on ${c?.work ? "Work" : "Personal"}</div>`); icons(); } }
+      w.querySelector(".bh").insertAdjacentHTML("afterend", `<div class="slot"><i data-lucide="play" class="ic"></i>Drop to start on ${esc(c ? accOf(c).label : "")}</div>`); icons(); } }
   else if (w?.classList.contains("drop")) { w.classList.remove("drop"); w.querySelector(".slot")?.remove(); }
 });
 document.addEventListener("drop", e => {
