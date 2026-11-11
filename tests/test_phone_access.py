@@ -263,13 +263,13 @@ class InProcess(unittest.TestCase):
         owner = S.Whois.owner()
         orig = S.Whois.of
         try:
-            S.Whois.of = classmethod(lambda cls, ip: {"node": "nodeA", "node_name": "oppo-f11", "user": owner})
+            S.Whois.of = classmethod(lambda cls, ip: {"node": "nodeA", "node_name": "phone-1", "user": owner})
             self.assertEqual(S.pin_check(dev, "100.1.2.3"), (True, ""))
             dev = next(d for d in S.load_devices() if d["id"] == dev["id"])
             self.assertEqual(dev["node"], "nodeA")
             S.Whois.of = classmethod(lambda cls, ip: {"node": "nodeB", "node_name": "other", "user": owner})
             ok, why = S.pin_check(dev, "100.1.2.4")
-            self.assertFalse(ok); self.assertIn("oppo-f11", why)
+            self.assertFalse(ok); self.assertIn("phone-1", why)
             dev2, _ = S.pair_device("fresh")
             S.Whois.of = classmethod(lambda cls, ip: {"node": "nodeC", "node_name": "nuc", "user": -1})
             self.assertFalse(S.pin_check(dev2, "100.1.2.5")[0])     # someone else's node can't claim a pairing

@@ -923,7 +923,7 @@ class H(BaseHTTPRequestHandler):
                     pass
 
     # ------------------------------------------------------------ live voice
-    # The phone streams PCM16LE 16 kHz mono as binary frames while Cris talks.
+    # The phone streams PCM16LE 16 kHz mono as binary frames while the user talks.
     # Every ~0.8 s (when there is new audio and the worker is free) the server
     # sends {"type":"partial","text"}; {"type":"stop"} from the phone runs the
     # final pass over the whole clip (with the vocab hint) and sends

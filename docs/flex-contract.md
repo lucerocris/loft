@@ -5,7 +5,7 @@ by account, by project/group, by folder/repo, by status, or flat. A project can 
 
 ## Use cases to design for
 1. Solo: one account, many repos. Grouping by folder or project; account UI mostly hidden.
-2. Two accounts, personal vs work (Cris): group by account (today's behaviour).
+2. Two accounts, personal vs work: group by account (today's behaviour).
 3. Freelancer: a project per client, each client project pinned to one account.
 4. Heavy user: one project spread over 2-3 accounts to share load; New task picks the project's default account, or the one with most usage left ("auto").
 5. Team member / agency: many projects, few accounts; mostly group by project.
@@ -42,7 +42,7 @@ POST   /api/cards (create) accepts optional project; account resolved: explicit 
 - New task: Project picker first (optional), then account limited to the project's accounts with "Auto" option, folder prefilled.
 - Projects screen: create/edit (name, color, accounts multi-select, default account incl. Auto, folders), and "move agent to project" from a card menu.
 - First run: "How do you want to organize?" Accounts / Projects / Folders / Just a list; sets groupBy and offers to create projects from recent folders.
-- No Cris-specific copy ("Work"/"Personal" only appear as his account labels from config).
+- No user-specific copy ("Work"/"Personal" only appear as account labels from config).
 
 ## As built (desktop branch loft-flex) — additive to the above, nothing removed
 Server and config

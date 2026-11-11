@@ -379,9 +379,13 @@ MAC_BROWSERS = ["Google Chrome", "Chromium", "Microsoft Edge", "Brave Browser", 
 LINUX_BROWSERS = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"]
 
 
-def open_window(url):
+def open_window(url, port=None):
     profile = os.environ.get("LOFT_CHROME_PROFILE") or str(paths.data_dir() / "chrome")
     if paths.is_mac():
+        native = paths.HOME / "Applications/Loft.app/Contents/MacOS/Loft"
+        if native.exists():  # built by install.sh from macos/Loft.swift
+            subprocess.Popen(["open", "-a", str(native.parents[2]), "--args", "--port", str(port or DEFAULT_PORT)])
+            return "Loft.app"
         for app in MAC_BROWSERS:
             if any(Path(base, f"{app}.app").exists() for base in ("/Applications", str(paths.HOME / "Applications"))):
                 subprocess.Popen(["open", "-na", app, "--args", f"--app={url}", f"--user-data-dir={profile}"])
@@ -430,7 +434,7 @@ def cmd_app(argv):
     url = f"http://127.0.0.1:{port}/"
     if "--no-open" in argv:
         say(url); return 0
-    how = open_window(url)
+    how = open_window(url, port)
     say(f"Loft at {url} ({how})")
     return 0
 
