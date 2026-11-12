@@ -854,6 +854,9 @@ def browser_route(jid, action, body):
         _GATING.add(jid)
         res = gate(card, base=(body.get("base") or "").strip() or None, reply=False)
         return 200, {"message": res.get("skipped") or f"{res['passed']}/{res['total']} checks passed", "results": res}
+    if action == "check-approve":   # an agent recorded it: now every agent on the project must pass it
+        BR.approve_check(scope, body.get("id"))
+        return 200, {"message": "Check approved for the project"}
     if action == "check-delete":
         BR.checks_save(scope, [c for c in BR.checks_for(scope) if c["id"] != body.get("id")])
         return 200, {"message": "Check deleted"}
@@ -871,6 +874,37 @@ def browser_route(jid, action, body):
         threading.Thread(target=tell, daemon=True).start()
         return 200, {"message": "Told the agent you're driving" if body.get("on") else "Handed back to the agent"}
     return 400, {"message": f"Unknown action {action}"}
+
+
+def agent_route(card, action, body):
+    jid, scope = card["id"], BR.scope_of(card)
+    if action == "checks":
+        return 200, {"checks": BR.checks_for(scope), "last": BR.results(jid)}
+    if body is None:
+        return 405, {"message": "POST this."}
+    if action == "record":
+        if body.get("on"):
+            BR.rec_start(jid, BR.ensure(jid)["port"])
+            return 200, {"message": "Recording. Walk the flow with the browser tools, add loft_record_expect "
+                                    "for text that must show, then loft_record_save with a name."}
+        steps = BR.rec_stop(jid)
+        if steps is None:
+            return 409, {"message": "Not recording."}
+        if not (body.get("name") or "").strip():
+            return 200, {"message": f"Discarded {len(steps)} steps."}
+        return 200, {"message": BR.save_check(scope, body["name"], steps, by=jid), "steps": steps}
+    if action == "expect":
+        BR.rec_expect(jid, body.get("text"), (body.get("selector") or "").strip() or None)
+        return 200, {"message": "Added", "steps": BR.recording(jid)}
+    if action == "run":
+        if jid in _GATING:
+            return 409, {"message": "Checks are already running."}
+        if not BR.checks_for(scope):
+            return 400, {"message": "This project has no checks yet."}
+        _GATING.add(jid)
+        res = gate(card, base=(body.get("base") or "").strip() or None, reply=False)
+        return 200, res
+    return 404, {"message": f"Unknown tool action {action}"}
 
 
 class H(BaseHTTPRequestHandler):
@@ -973,6 +1007,8 @@ class H(BaseHTTPRequestHandler):
                          "woff2": "font/woff2"}.get(f.suffix.lstrip("."), "application/octet-stream")
                 return self._send(200, f.read_bytes(), ctype)
             return self._send(404, {"error": "not found"})
+        if path.startswith("/api/agent/"):
+            return self.agent_api(path, None)
         if not self._authed():
             return self._send(403, {"error": "bad token"})
         if path in ("/api/phone", "/api/devices"):
@@ -1170,7 +1206,7 @@ class H(BaseHTTPRequestHandler):
         scope = BR.scope_of(card)
         try:
             rec = BR.ensure(jid)
-            v = BR.Viewer(rec["port"], frame, ev, scope)
+            v = BR.Viewer(rec["port"], frame, ev, scope, jid)
         except Exception as e:
             ev({"type": "toast", "err": True, "text": f"Couldn't open the browser: {e}"})
             try:
@@ -1178,8 +1214,9 @@ class H(BaseHTTPRequestHandler):
             except OSError:
                 pass
             return
+        BR.subscribe(jid, ev)   # recording steps, whoever is recording (you or the agent)
         ev({"type": "hello", "mcp": bool(rec.get("mcp")), "ports": BR.dev_ports(card["cwd"]),
-            "login": bool(BR.login_for(scope))})
+            "login": bool(BR.login_for(scope)), "recording": BR.recording(jid)})
         try:
             while True:
                 op, data = self._ws_read()
@@ -1207,19 +1244,13 @@ class H(BaseHTTPRequestHandler):
                     elif t == "rec":
                         if msg.get("on"):
                             try:
-                                v.record(True)
+                                v.record()
                             except Exception:
                                 ev({"type": "recoff"}); raise
                         else:
-                            steps = v.record(False) or []
-                            name = (msg.get("name") or "").strip()
-                            if name and len(steps) > 1:
-                                items = BR.checks_for(scope) + [{"id": secrets.token_hex(4), "name": name, "steps": steps,
-                                                                 "created": time.time()}]
-                                BR.checks_save(scope, items)
-                                ev({"type": "saved"}); ev({"type": "toast", "text": f"Saved check “{name}” for this project"})
-                            elif name:
-                                ev({"type": "toast", "err": True, "text": "Nothing recorded: click through the flow first."})
+                            steps = BR.rec_stop(jid) or []
+                            if (msg.get("name") or "").strip():
+                                ev({"type": "toast", "text": BR.save_check(scope, msg["name"], steps)}); ev({"type": "saved"})
                     elif t == "comment":   # delivering takes seconds: don't hold up the mouse and keys
                         def deliver(msg=msg):
                             try:
@@ -1238,6 +1269,7 @@ class H(BaseHTTPRequestHandler):
         except (OSError, ConnectionError):
             pass
         finally:
+            BR.unsubscribe(jid, ev)
             v.close()
 
     @staticmethod
@@ -1379,7 +1411,25 @@ class H(BaseHTTPRequestHandler):
             return self._send(code, payload)
         return self._send(404, {"error": "not found"})
 
+    def agent_api(self, path, body):
+        """Loft's tools for an agent (loft/agent_mcp.py). The token names the agent; only its own browser."""
+        jid = BR.jid_for_token(self.headers.get("X-Loft-Agent", ""))
+        card = jid and find_card(jid)
+        if not card or self.device is not None:
+            return self._send(403, {"message": "Not a Loft agent token."})
+        try:
+            code, payload = agent_route(card, path.rsplit("/", 1)[-1], body)
+        except Exception as e:
+            code, payload = 400, {"message": str(e)}
+        return self._send(code, payload)
+
     def do_POST(self):
+        if urlparse(self.path).path.startswith("/api/agent/"):
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            except Exception:
+                body = {}
+            return self.agent_api(urlparse(self.path).path, body)
         if not self._authed():
             return self._send(403, {"error": "bad token"})
         parts = urlparse(self.path).path.strip("/").split("/")  # api/cards/<id>/<action> | api/cards
@@ -1500,6 +1550,7 @@ def main():
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     except OSError as e:
         print(f"couldn't write the key file: {e}", file=sys.stderr, flush=True)
+    os.environ["LOFT_PORT"] = str(port)   # agents started from here reach Loft's tools on this port
     print(f"loft on http://127.0.0.1:{port}", flush=True)
     if "--exit-with-stdin" in sys.argv:   # desktop app: exit when the parent goes away
         threading.Thread(target=lambda: (sys.stdin.read(), drop_key(), os._exit(0)), daemon=True).start()

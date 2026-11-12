@@ -1054,6 +1054,7 @@ function brFrame(blob) {
 function brEvent(m) {
   if (m.type === "hello") {
     BR.mcp = m.mcp; BR.ports = m.ports || []; brPorts(); brTake();
+    if (m.recording) { BR.recording = true; BR.steps = m.recording; brMarks(); brSide(); }
     if ((!BR.url || BR.url === "about:blank") && BR.ports.length) { BR.autoLogin = m.login; bsend({ type: "nav", url: `localhost:${BR.ports[0]}` }); }
     else if (!BR.ports.length && (!BR.url || BR.url === "about:blank")) { const cv = $("#bcover"); if (cv) cv.innerHTML = `<div>No dev server running in this agent's folder<button class="btn secondary" data-bb="askserve">Ask the agent to start one</button><span class="hint">or type a URL above</span></div>`; icons(); }
     return;
@@ -1061,7 +1062,12 @@ function brEvent(m) {
   if (m.type === "url") { BR.url = m.url; const u = $("#burl"); if (u && document.activeElement !== u) u.value = m.url === "about:blank" ? "" : m.url;
     if (BR.autoLogin && /^https?:/.test(m.url)) { BR.autoLogin = false; setTimeout(() => bsend({ type: "login-use" }), 300); } return; }
   if (m.type === "err") { BR.errs.push(m.text); if (BR.errs.length > 50) BR.errs.shift(); const b = $("#berr"); if (b) { b.hidden = false; b.textContent = `● ${BR.errs.length} error${BR.errs.length > 1 ? "s" : ""}`; } return; }
-  if (m.type === "steps") { BR.steps = m.steps; return brSide(); }
+  if (m.type === "steps") {   // from you or the agent: whoever recorded, the card shows it live
+    BR.steps = m.steps || [];
+    if (m.on === false) { BR.recording = BR.expect = false; brMarks(); return brInfo(); }
+    if (!BR.recording) { BR.recording = true; brMarks(); }
+    return brSide();
+  }
   if (m.type === "toast") return toast(m.text, m.err);
   if (m.type === "saved" || m.type === "login") return brInfo();
   if (m.type === "recoff") { BR.recording = BR.expect = false; brMarks(); return brInfo(); }
@@ -1082,7 +1088,7 @@ async function brInfo() {
 function brSide() {
   const el = $("#bside"); if (!el) return;
   if (BR.recording) {
-    el.innerHTML = `<div class="row"><span class="label alert">Recording</span><span class="grow hint" style="margin:0">Click through the flow in the browser. “Check text” then click some text to assert it's there.</span>
+    el.innerHTML = `<div class="row"><span class="label alert">Recording</span><span class="grow hint" style="margin:0">Click through the flow, or ask the agent to walk it: both are recorded. “Check text” then click some text to assert it's there.</span>
         <button class="btn quiet" data-bb="expect" aria-pressed="${BR.expect}"><i data-lucide="text-search" class="ic"></i>Check text</button></div>
       ${BR.steps.map((s, i) => `<div class="mono">${i + 1}. ${esc(stepText(s))}</div>`).join("")}
       <div class="row"><input id="bname" placeholder="Name this check, e.g. Log in and open settings" style="flex:1"><button class="btn primary" data-bb="recsave">Save check</button><button class="btn quiet" data-bb="recdrop">Discard</button></div>`;
@@ -1091,7 +1097,7 @@ function brSide() {
   const I = BR.info; if (!I) { el.innerHTML = ""; return; }
   const res = I.results, byId = Object.fromEntries((res?.results || []).map(r => [r.id, r]));
   const checks = I.checks.map(k => { const r = byId[k.id];
-    return `<div class="row"><span class="${r ? (r.ok ? "ok" : "bad") : "st-muted"}">${r ? (r.ok ? "✓" : "✗") : "○"}</span><span class="grow">${esc(k.name)} <span class="st-muted">· ${k.steps.length} steps</span></span><button class="ibtn" data-ckdel="${k.id}" title="Delete check" aria-label="Delete check"><i data-lucide="trash-2" class="ic"></i></button></div>
+    return `<div class="row"><span class="${r ? (r.ok ? "ok" : "bad") : "st-muted"}">${r ? (r.ok ? "✓" : "✗") : "○"}</span><span class="grow">${esc(k.name)} <span class="st-muted">· ${k.steps.length} steps${k.pending ? " · recorded by an agent, waiting for you" : ""}</span></span>${k.pending ? `<button class="btn secondary" data-ckok="${k.id}" title="Every agent on this project must pass it from now on">Approve</button>` : ""}<button class="ibtn" data-ckdel="${k.id}" title="Delete check" aria-label="Delete check"><i data-lucide="trash-2" class="ic"></i></button></div>
       ${r && !r.ok ? `<div class="mono bad">step ${r.step}: ${esc(r.error)}${r.shot ? `<br>${esc(r.shot)}` : ""}</div>` : ""}`; }).join("");
   el.innerHTML = `<div class="row"><span class="label">Checks for this project</span><span class="grow hint" style="margin:0">${I.checks.length ? (I.running ? "running…" : res?.skipped ? esc(res.skipped) : res?.at ? `last run ${((a) => a === "now" ? "just now" : a + " ago")(ago(new Date(res.at * 1000).toISOString()))} on ${esc(res.base || "")}` : "they run each time the agent finishes a turn") : "none yet: Record a flow and every agent on this project has to pass it"}</span>
       ${I.checks.length ? `<button class="btn secondary" data-bb="run" ${I.running ? "disabled" : ""}><i data-lucide="play" class="ic"></i>Run now</button>` : ""}</div>
@@ -1100,7 +1106,9 @@ function brSide() {
     ${BR.errs.length && BR.showErrs ? `<div class="label">Page errors</div>${BR.errs.slice(-12).map(t => `<div class="mono bad">${esc(t)}</div>`).join("")}` : ""}`;
   icons();
 }
-function stepText(s) { return s.action === "goto" ? `open ${s.path}` : s.action === "click" ? `click ${s.desc || s.css}` : s.action === "type" ? `type “${s.text}”` : s.action === "press" ? `press ${s.key}` : `see “${s.text}”`; }
+function stepText(s) { return s.action === "goto" ? `open ${s.path}` : s.action === "click" ? `click ${s.desc || s.css}`
+  : s.action === "fill" ? (s.secret ? `fill ${s.desc || s.css} (password: not recorded, the saved login covers it)` : `fill ${s.desc || s.css} with “${s.value}”`)
+  : s.action === "type" ? `type “${s.text}”` : s.action === "press" ? `press ${s.key}` : `see “${s.text}”`; }
 function brInput(img) {
   const pos = e => { const r = img.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
   const mods = e => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
@@ -1133,6 +1141,7 @@ function brNote(e, p) {
 async function brClick(t) {
   const a = t.dataset.bb, id = BR.id;
   if (t.dataset.bport) return bsend({ type: "nav", url: `localhost:${t.dataset.bport}` });
+  if (t.dataset.ckok) { try { toast((await api(`/api/browser/${id}/check-approve`, { id: t.dataset.ckok })).message); } catch (e) { toast(e.message, true); } return brInfo(); }
   if (t.dataset.ckdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.title = "Click again to delete"; return; } try { toast((await api(`/api/browser/${id}/check-delete`, { id: t.dataset.ckdel })).message); } catch (e) { toast(e.message, true); } return brInfo(); }
   if (!a) return;
   if (a === "back" || a === "reload") return bsend({ type: a });
