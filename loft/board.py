@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import accounts as A
+from . import browser as BR
 from . import core as C
 from . import paths
 from . import projects as P
@@ -609,6 +610,10 @@ def act_archive(card):
         pins_write([p for p in pins_read() if p != card["id"]])
     except Exception:
         pass
+    try:
+        BR.stop(card["id"])   # its shared browser and profile go with it
+    except Exception:
+        pass
     return f"archived to {str(dest).replace(str(HOME), '~')}"
 
 
@@ -640,13 +645,22 @@ def launch_todo(todo):
         return None, f"folder missing: {cwd}"
     cfg = A.load()
     acc = todo_account(todo, cfg)
-    cmd = [paths.claude_bin(), "--bg", "--name", todo.get("title") or "agent", todo["prompt"]]
+    try:   # web project: a browser the agent shares with the card (see loft/browser.py)
+        br = BR.prepare(cwd)
+    except Exception:
+        br = None
+    extra = ["--mcp-config", BR.mcp_config(br["port"]), "--append-system-prompt", BR.AGENT_NOTE] if br else []
+    # --mcp-config takes several values: the flags after it end the list before the prompt
+    cmd = [paths.claude_bin(), "--bg", *extra, "--name", todo.get("title") or "agent", todo["prompt"]]
     r = subprocess.run(cmd, cwd=cwd, env=account_env(acc), capture_output=True, text=True, timeout=90)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]{8})", r.stdout + r.stderr)
     if not m:
+        BR.discard(br)
         lines = (r.stdout + r.stderr).strip().splitlines()
         return None, lines[-1] if lines else "launch failed"
     jid = m.group(1)
+    if br:
+        BR.adopt(jid, br)
     for _ in range(20):
         if (jobs() / jid / "state.json").exists():
             try:

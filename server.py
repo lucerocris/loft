@@ -53,7 +53,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, board as B, core as C, paths, projects as P, usage as U, webapi  # noqa: E402
+from loft import accounts as A, board as B, browser as BR, core as C, paths, projects as P, usage as U, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -449,6 +449,8 @@ def snapshot():
     cards = B.load_cards(show_all_done=True)
     for c in cards:
         c["updated"] = c["updated"].isoformat() if c["updated"] else None
+        if c["kind"] == "agent":
+            c["browser"] = browser_badge(c["id"])
         c["cwd"] = c["cwd"].replace(str(HOME), "~")
         c["folder"] = c["cwd"]
     try:
@@ -573,6 +575,10 @@ def pending_loop(every=3.0):
             run_queue()
         except Exception as e:
             print(f"prompt queue loop: {type(e).__name__}: {e}", flush=True)
+        try:
+            check_gate()
+        except Exception as e:
+            print(f"browser checks: {type(e).__name__}: {e}", flush=True)
 
 
 def run_queue():
@@ -764,6 +770,109 @@ def act(cid, action, body):
     return 400, f"Unknown action {action}"
 
 
+# ------------------------------------------------------------------ shared agent browser
+# One headless Chromium per agent (loft/browser.py). The card streams it, records click flows
+# as per-project checks, and replays them when the agent finishes a turn.
+_LAST_COL, _GATING = {}, set()
+GATE_TRIES = 3   # failed runs sent back to the agent before Loft stops and leaves it to you
+
+
+def browser_badge(jid):
+    rec, res = BR.record(jid), BR.results(jid)
+    if not rec and not res:
+        return None
+    out = {"mcp": bool(rec and rec.get("mcp")), "running": jid in _GATING}
+    if res:
+        out["checks"] = {k: res.get(k) for k in ("ok", "passed", "total", "attempts", "skipped", "at")}
+    return out
+
+
+def browser_info(card):
+    scope = BR.scope_of(card)
+    lg = BR.login_for(scope)
+    return {"ports": BR.dev_ports(card["cwd"]), "scope": scope, "checks": BR.checks_for(scope),
+            "results": BR.results(card["id"]), "running": card["id"] in _GATING,
+            "login": {"host": lg["host"], "saved": lg["saved"]} if lg else None, "badge": browser_badge(card["id"])}
+
+
+def gate(card, base=None, reply=True):
+    """Replay the project's checks against the agent's dev server; tell the agent what failed."""
+    try:
+        if not base:
+            ports = BR.dev_ports(card["cwd"])
+            if not ports:
+                res = {"at": time.time(), "ok": None, "skipped": "No dev server running in the agent's folder",
+                       "attempts": (BR.results(card["id"]) or {}).get("attempts", 0)}
+                (BR.home() / f"{card['id']}-checks.json").write_text(json.dumps(res))
+                return res
+            base = f"http://localhost:{ports[0]}"
+        res = BR.run_all(card["id"], card, base)
+        if reply and not res["ok"] and res["attempts"] <= GATE_TRIES:
+            msg = BR.failure_message(res)
+            try:
+                send_to_agent(card, msg)
+            except Exception as e:   # couldn't reach it now: the prompt queue retries when it's free
+                print(f"checks {card['id']}: couldn't tell the agent ({e}); queued", flush=True)
+                with LOCK:
+                    B.queue_add(card["id"], msg)
+        return res
+    finally:
+        _GATING.discard(card["id"])
+
+
+def check_gate():
+    """An agent left Working and its project has checks: run them (in the background)."""
+    allc = BR.checks_all()
+    for c in B.load_cards(show_all_done=True):
+        if c["kind"] != "agent":
+            continue
+        prev, _LAST_COL[c["id"]] = _LAST_COL.get(c["id"]), c["col"]
+        if prev == "running" and c["col"] in ("needs", "done") and allc.get(BR.scope_of(c)) and c["id"] not in _GATING:
+            _GATING.add(c["id"])
+            threading.Thread(target=lambda c=c: _log_gate(c), daemon=True).start()
+
+
+def _log_gate(card):
+    try:
+        res = gate(card)
+        summary = res.get("skipped") or f"{res['passed']}/{res['total']} passed"
+        print(f"checks {card['id']}: {summary}", flush=True)
+    except Exception as e:
+        print(f"checks {card['id']} failed to run: {type(e).__name__}: {e}", flush=True)
+
+
+def browser_route(jid, action, body):
+    card = find_card(jid)
+    if not card or card["kind"] != "agent":
+        return 404, {"message": "No such agent."}
+    scope = BR.scope_of(card)
+    if action == "run":
+        if jid in _GATING:
+            return 409, {"message": "Checks are already running."}
+        if not BR.checks_for(scope):
+            return 400, {"message": "No checks yet. Record one first."}
+        _GATING.add(jid)
+        res = gate(card, base=(body.get("base") or "").strip() or None, reply=False)
+        return 200, {"message": res.get("skipped") or f"{res['passed']}/{res['total']} checks passed", "results": res}
+    if action == "check-delete":
+        BR.checks_save(scope, [c for c in BR.checks_for(scope) if c["id"] != body.get("id")])
+        return 200, {"message": "Check deleted"}
+    if action == "login-forget":
+        BR.login_drop(scope)
+        return 200, {"message": "Saved login forgotten"}
+    if action == "takeover":
+        text = ("I'm taking over the shared browser for a moment. Don't use the browser tools until I hand it back."
+                if body.get("on") else "I handed the shared browser back. Carry on from the page it's on now.")
+        def tell():
+            try:
+                send_to_agent(card, text)
+            except Exception as e:
+                print(f"takeover {jid}: couldn't tell the agent: {e}", flush=True)
+        threading.Thread(target=tell, daemon=True).start()
+        return 200, {"message": "Told the agent you're driving" if body.get("on") else "Handed back to the agent"}
+    return 400, {"message": f"Unknown action {action}"}
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "cagents"
 
@@ -787,7 +896,7 @@ class H(BaseHTTPRequestHandler):
         if not tok:  # EventSource can't send headers; it passes ?t= (GET /api/events only)
             from urllib.parse import parse_qs
             u = urlparse(self.path)
-            if u.path == "/api/events" or u.path.startswith("/ws/term/"):
+            if u.path == "/api/events" or u.path.startswith(("/ws/term/", "/ws/browser/")):
                 tok = (parse_qs(u.query).get("t") or [""])[0]
         return secrets.compare_digest(tok, TOKEN)
 
@@ -883,6 +992,13 @@ class H(BaseHTTPRequestHandler):
             return webapi.handle_get(self, path)
         if path.startswith("/ws/term/"):
             return self.term_ws(path.rsplit("/", 1)[-1])
+        if path.startswith(("/ws/browser/", "/api/browser/")):   # desktop only: shows local files and drives a browser
+            if not self._admin():
+                return self._send(404, {"error": "not found"})
+            if path.startswith("/ws/"):
+                return self.browser_ws(path.rsplit("/", 1)[-1])
+            card = find_card(path.rsplit("/", 1)[-1])
+            return self._send(200, browser_info(card)) if card else self._send(404, {"error": "no such agent"})
         return self._send(404, {"error": "not found"})
 
     def events(self):
@@ -1027,6 +1143,123 @@ class H(BaseHTTPRequestHandler):
                     os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
                 except OSError:
                     pass
+
+    # ------------------------------------------------------------ shared browser
+    # Binary frames out = JPEG screencast. Text frames out = {"type": hello|url|err|steps|toast|saved}.
+    # Text frames in = {"type": mouse|key|nav|back|reload|viewport|rec|comment|login-save|login-use, ...};
+    # mouse x/y are 0..1 of the picture.
+    def browser_ws(self, jid):
+        card = find_card(jid)
+        if not self.headers.get("Sec-WebSocket-Key") or not card or card["kind"] != "agent":
+            return self._send(404, {"error": "no such agent"})
+        self._ws_accept()
+        lock = threading.Lock()
+
+        def frame(b):
+            try:
+                self._ws_send(2, b, lock)
+            except OSError:
+                pass
+
+        def ev(d):
+            try:
+                self._ws_send(1, json.dumps(d).encode(), lock)
+            except OSError:
+                pass
+
+        scope = BR.scope_of(card)
+        try:
+            rec = BR.ensure(jid)
+            v = BR.Viewer(rec["port"], frame, ev, scope)
+        except Exception as e:
+            ev({"type": "toast", "err": True, "text": f"Couldn't open the browser: {e}"})
+            try:
+                self._ws_send(8, b"", lock)
+            except OSError:
+                pass
+            return
+        ev({"type": "hello", "mcp": bool(rec.get("mcp")), "ports": BR.dev_ports(card["cwd"]),
+            "login": bool(BR.login_for(scope))})
+        try:
+            while True:
+                op, data = self._ws_read()
+                if op is None or op == 8:
+                    break
+                if op == 9:
+                    self._ws_send(10, data, lock); continue
+                if op != 1:
+                    continue
+                try:
+                    msg = json.loads(data)
+                    t = msg.get("type")
+                    if t == "mouse":
+                        v.mouse(msg)
+                    elif t == "key":
+                        v.key(msg)
+                    elif t == "nav":
+                        v.navigate(msg.get("url") or "")
+                    elif t == "back":
+                        v.back()
+                    elif t == "reload":
+                        v.reload()
+                    elif t == "viewport":
+                        v.viewport(msg.get("mobile"))
+                    elif t == "rec":
+                        if msg.get("on"):
+                            try:
+                                v.record(True)
+                            except Exception:
+                                ev({"type": "recoff"}); raise
+                        else:
+                            steps = v.record(False) or []
+                            name = (msg.get("name") or "").strip()
+                            if name and len(steps) > 1:
+                                items = BR.checks_for(scope) + [{"id": secrets.token_hex(4), "name": name, "steps": steps,
+                                                                 "created": time.time()}]
+                                BR.checks_save(scope, items)
+                                ev({"type": "saved"}); ev({"type": "toast", "text": f"Saved check “{name}” for this project"})
+                            elif name:
+                                ev({"type": "toast", "err": True, "text": "Nothing recorded: click through the flow first."})
+                    elif t == "comment":   # delivering takes seconds: don't hold up the mouse and keys
+                        def deliver(msg=msg):
+                            try:
+                                ev({"type": "toast", "text": self._browser_comment(card, v, msg)})
+                            except Exception as e:
+                                ev({"type": "toast", "err": True, "text": f"Comment not sent: {e}"})
+                        threading.Thread(target=deliver, daemon=True).start()
+                    elif t == "login-save":
+                        ev({"type": "toast", "text": v.save_login()}); ev({"type": "login", "saved": True})
+                    elif t == "login-use":
+                        ev({"type": "toast", "text": v.use_login()})
+                except (OSError, ConnectionError):
+                    raise
+                except Exception as e:
+                    ev({"type": "toast", "err": True, "text": str(e)})
+        except (OSError, ConnectionError):
+            pass
+        finally:
+            v.close()
+
+    @staticmethod
+    def _browser_comment(card, v, msg):
+        note = (msg.get("note") or "").strip()
+        if not note:
+            raise ValueError("Write what's wrong first.")
+        x, y = msg["x"] * v.meta["deviceWidth"], msg["y"] * v.meta["deviceHeight"]
+        el = v.pick(x, y, {})
+        if not el:
+            raise ValueError("Nothing there to comment on.")
+        r, pad = el["rect"], 16
+        shot = BR.screenshot(v.cdp, v.session, BR.home() / f"shots-{card['id']}" / f"comment-{int(time.time())}.png",
+                             {"x": max(0, r["x"] - pad), "y": max(0, r["y"] - pad),
+                              "width": max(1, r["w"] + 2 * pad), "height": max(1, r["h"] + 2 * pad)})
+        text = (f"Feedback on {v.url()} in the shared browser, about {el['desc']} (selector `{el['css']}`"
+                f"{', text “' + el['text'] + '”' if el.get('text') else ''}): {note}\nScreenshot: {shot}")
+        with LOCK:
+            code, m = act(card["id"], "reply", {"text": text})
+        if code != 200:
+            raise ValueError(m)
+        return m
 
     # ------------------------------------------------------------ live voice
     # The phone streams PCM16LE 16 kHz mono as binary frames while the user talks.
@@ -1174,6 +1407,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         if parts[:2] == ["api", "projects"] or parts == ["api", "view"]:
             code, payload = projects_route("POST", parts, body)
+            return self._send(code, payload)
+        if parts[:2] == ["api", "browser"] and len(parts) == 4:
+            if not self._admin():
+                return self._send(404, {"error": "not found"})
+            try:
+                code, payload = browser_route(parts[2], parts[3], body)
+            except Exception as e:
+                code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
             return self._send(code, payload)
         if parts[:2] != ["api", "cards"]:
             return self._send(404, {"error": "not found"})
