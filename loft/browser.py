@@ -798,6 +798,9 @@ def login_storage(cdp, session, scope):
     lg = login_for(scope)
     if not lg or not (lg["local"] or lg["session"]):
         return False
+    host = urlparse(page_eval(cdp, session, "location.href")).hostname   # the page we'd write into, after redirects
+    if host != lg["host"] and not (host in LOCAL_HOSTS and lg["host"] in LOCAL_HOSTS):
+        raise RuntimeError(f"The saved login is for {lg['host']}, not {host}.")
     data = json.dumps({"local": lg["local"], "session": lg["session"]})
     page_eval(cdp, session, f"(d => {{ for (const [k, v] of d.local) localStorage.setItem(k, v); "
                             f"for (const [k, v] of d.session) sessionStorage.setItem(k, v); return true; }})({data})")

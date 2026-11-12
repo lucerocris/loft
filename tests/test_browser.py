@@ -132,6 +132,11 @@ class Live(unittest.TestCase):
         port2 = BR.ensure("j2")["port"]            # its own profile: no cookies of its own
         self.assertFalse(BR.run_check(port2, self.base, steps, self.tmp / "s3.png")["ok"])
         self.assertTrue(BR.run_check(port2, self.base, steps, self.tmp / "s4.png", scope="p1")["ok"])
+        # never into another site's page
+        v.navigate("about:blank")
+        time.sleep(0.5)
+        with self.assertRaises(RuntimeError):
+            BR.login_storage(v.cdp, v.session, "p1")
         # and on localhost, where the login wasn't saved
         self.assertTrue(BR.run_check(port2, f"http://localhost:{self.port}", steps, self.tmp / "s5.png", scope="p1")["ok"])
 
