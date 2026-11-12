@@ -649,7 +649,7 @@ def launch_todo(todo):
         br = BR.prepare(cwd)
     except Exception:
         br = None
-    extra = ["--mcp-config", BR.mcp_config(br["port"]), "--append-system-prompt", BR.AGENT_NOTE] if br else []
+    extra = ["--mcp-config", BR.mcp_config(br), "--append-system-prompt", BR.AGENT_NOTE] if br else []
     # --mcp-config takes several values: the flags after it end the list before the prompt
     cmd = [paths.claude_bin(), "--bg", *extra, "--name", todo.get("title") or "agent", todo["prompt"]]
     r = subprocess.run(cmd, cwd=cwd, env=account_env(acc), capture_output=True, text=True, timeout=90)

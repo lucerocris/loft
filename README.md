@@ -179,6 +179,13 @@ Click, scroll and type in it as in any browser.
   agent's dev server. Failures go back to the agent with the step, the error and a screenshot,
   up to 3 runs, then Loft leaves it to you. **Run now** runs them on demand. The result shows
   on the card (✓ 2/2 checks).
+- **Agent walkthroughs**: recording happens inside the page, so it captures whoever drives the
+  browser: clicks, filled fields, Enter and page loads. Agents started from Loft also get
+  Loft's own tools (`loft/agent_mcp.py`): `loft_record_start`, `loft_record_expect`,
+  `loft_record_save`, `loft_record_discard`, `loft_run_checks` and `loft_list_checks`. Ask an
+  agent to "walk through checkout and save it as a check" and you watch the steps appear in
+  the card as it goes. Password fields are never recorded (replay relies on the saved login).
+  Each agent's tools use their own token, so they only reach that agent's browser.
 - **Saved login**: log in once in the browser, then **Login → Save login from this page**.
   Loft keeps that page's cookies and local/session storage for the project. It puts them into
   every browser of the project when you open it and before every check run. A login saved on
