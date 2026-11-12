@@ -48,7 +48,7 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .btn.quiet { color: var(--t2); } .btn.quiet:hover { background: var(--raised); color: var(--t1); }
 .btn[disabled] { opacity: .4; cursor: not-allowed; }
 .top .btn { margin-left: auto; }
-.list { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.list { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .sec { display: flex; align-items: center; gap: 6px; padding: 14px 12px 6px; font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--t3); }
 .sec.alert { color: var(--needs); }
 .sec button { margin-left: auto; border: 0; background: none; color: var(--t3); font: inherit; cursor: pointer; padding: 0; }
@@ -116,6 +116,20 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .cover { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15,16,18,.92); color: var(--t2); z-index: 2; }
 .cover > div { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .tmic { position: absolute; right: 22px; bottom: 16px; z-index: 3; background: var(--raised); border: 1px solid var(--border-strong); }
+/* prompt queue: waits for the turn, or for the account's limit to reset */
+.qwrap { padding: 8px 32px 4px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.qwrap:empty { display: none; }
+.qwrap .composer { padding: 4px 4px 4px 12px; }
+.qlist { display: flex; flex-direction: column; gap: 4px; width: min(100%, 680px); }
+.qlist .qh { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 500; color: var(--t3); }
+.qlist .qh button { margin-left: auto; border: 0; background: none; color: var(--t3); font-size: 11px; cursor: pointer; padding: 0; }
+.qlist .qh button:hover { color: var(--t1); }
+.qi { display: flex; align-items: flex-start; gap: 8px; padding: 6px 4px 6px 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-sm); font-size: 13px; color: var(--t2); }
+.qi .n { font: 11px var(--mono); color: var(--t3); padding-top: 2px; }
+.qi .tx { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.qi .er { display: block; color: var(--failed); font-size: 11px; }
+.qi button { width: 20px; height: 20px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--t3); cursor: pointer; padding: 0; flex: none; }
+.qi button:hover { background: var(--selected); color: var(--t1); } .qi button .ic { width: 12px; height: 12px; }
 .tbar { display: flex; gap: 14px; white-space: nowrap; overflow: hidden; padding: 8px 32px 12px; font: 11px var(--mono); color: var(--t3); border-top: 1px solid var(--border); }
 
 /* new task */
@@ -258,6 +272,10 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .bcard[draggable="true"] { cursor: grab; }
 .bcard.dragging { opacity: .35; }
 .bcard.starting { opacity: .5; pointer-events: none; }
+.item, .bcard { position: relative; transition: transform .18s ease; }
+.swiping { transition: none !important; clip-path: inset(0 calc(-1 * var(--sw, 0px)) 0 var(--sw, 0px)); }
+.swiping::after { content: attr(data-swl); position: absolute; top: 0; bottom: 0; left: 100%; width: var(--sw, 0); display: flex; align-items: center; justify-content: flex-end; padding-right: 14px; box-sizing: border-box; overflow: hidden; white-space: nowrap; border-radius: var(--r-md); background: var(--raised); color: var(--t3); font-size: 12px; font-weight: 500; }
+.swiping.swipe-go::after { background: var(--failed); color: #fff; }
 .bcard .r1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .bcard .t { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bcard .s { font-size: 12px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -338,13 +356,17 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .fields { display: grid; grid-template-columns: 64px minmax(0, auto); gap: 10px 12px; align-items: center; justify-content: start; }
 .fields > .label { margin: 0; }
 .fields .folder input { width: 380px; }
+.fields .dchips { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; max-width: 560px; }
+.dchips button { border: 1px solid var(--border); background: var(--surface); color: var(--t2); font: 12px var(--mono); padding: 5px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.dchips button:hover { color: var(--t1); border-color: var(--border-strong); }
+.dchips button[aria-pressed="true"] { background: var(--selected); color: var(--t1); border-color: var(--t2); }
 .fields .fhint { grid-column: 2; font-size: 12px; color: var(--t3); max-width: 560px; }
 .pick { position: relative; padding: 0 0 0 12px; width: 280px; }
 .pick select { appearance: none; border: 0; background: none; outline: none; color: var(--t1); height: 36px; flex: 1; padding: 0 28px 0 0; cursor: pointer; }
 .pick select option { background: var(--raised); color: var(--t1); }
 .pick .chev { position: absolute; right: 10px; pointer-events: none; color: var(--t3); width: 14px; height: 14px; }
 .pick .ring { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--t3); flex: none; }
-@media (max-width: 820px) { .fields { grid-template-columns: minmax(0, 1fr); } .fields .fhint { grid-column: 1; } .fields .pick, .fields .folder { width: 100%; } .fields .folder input { width: 100%; min-width: 0; } .fields .seg { flex-wrap: wrap; } }
+@media (max-width: 820px) { .fields { grid-template-columns: minmax(0, 1fr); } .fields .fhint, .fields .dchips { grid-column: 1; } .fields .pick, .fields .folder { width: 100%; } .fields .folder input { width: 100%; min-width: 0; } .fields .seg { flex-wrap: wrap; } }
 /* projects screen */
 .plist { width: min(100%, 680px); display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
 .prow { display: flex; gap: 12px; align-items: flex-start; padding: 14px 14px 14px 16px; }
@@ -411,6 +433,29 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
 .dev:hover { background: var(--raised); }
 .dev .tx { flex: 1; min-width: 0; } .dev .tx b { font-weight: 500; } .dev .tx span { display: block; font: 11px var(--mono); color: var(--t3); }
 .dev .btn { height: 28px; color: var(--failed); } .dev .btn.armed { background: var(--failed); color: var(--on-primary); }
+/* ---------- shared agent browser ---------- */
+.bbar { display: flex; align-items: center; gap: 6px; padding: 8px 24px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.bbar input { flex: 1; min-width: 160px; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); color: var(--t1); font: 12px var(--mono); }
+.bbar .btn { height: 30px; font-size: 12px; padding: 0 9px; }
+.bbar [aria-pressed="true"], .bside [aria-pressed="true"] { background: var(--selected); color: var(--t1); }
+.bbar .rec[aria-pressed="true"] { color: var(--failed); }
+.bport { border: 1px solid var(--border); background: none; color: var(--t2); font: 11px var(--mono); height: 24px; padding: 0 8px; border-radius: 999px; cursor: pointer; }
+.bport:hover { color: var(--t1); background: var(--raised); }
+.berr { border: 0; background: none; color: var(--failed); font: 11px var(--mono); cursor: pointer; }
+.bview { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; background: #0B0C0E; overflow: hidden; }
+.bview img { max-width: 100%; max-height: 100%; display: block; outline: none; cursor: default; user-select: none; }
+.bview img:focus-visible { box-shadow: 0 0 0 2px var(--acc, #5B8DFF); }
+.bview.picking img { cursor: crosshair; }
+.bnote { position: absolute; z-index: 3; width: 280px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.bnote textarea { resize: none; height: 64px; background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--t1); padding: 6px 8px; font: inherit; }
+.bside { flex: none; height: 30%; min-height: 120px; overflow: auto; padding: 10px 24px 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.bside .row { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.bside .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bside .mono { font: 11px/1.5 var(--mono); color: var(--t2); overflow-wrap: anywhere; }
+.bside .ok { color: var(--ok); } .bside .bad { color: var(--failed); }
+.bside input { height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--raised); color: var(--t1); font: inherit; }
+.ck-ok { color: var(--ok); } .ck-bad { color: var(--failed); }
+@media (max-width: 820px) { .bbar, .bside { padding-left: 16px; padding-right: 16px; } }
 </style>
 </head>
 <body>
@@ -459,7 +504,7 @@ const MARK = (b = "#EDEEF0", l = "#5B8DFF", r = "#46C07D") => `<svg viewBox="0 0
 let S = { cards: [], usage: {}, dirs: [], voice: false }, loaded = false;
 let acct = store.get("loft.acct") || "";            // "" = all accounts, else an account id
 let sel = new URL(location.href).searchParams.get("a") || null;   // card id | "new" | null
-let showDone = false, termView = {}, prevNeeds = null, drafts = {};
+let showDone = false, termView = {}, brView = {}, prevNeeds = null, drafts = {};
 let newAcct = store.get("loft.newAcct") || "";
 let AC = null, adding = false, loginFor = null, loginEnded = false;    // accounts screen: listing, add form open, account signing in
 let view = new URL(location.href).searchParams.get("v") || store.get("loft.view") || "inbox";   // inbox | board
@@ -521,6 +566,9 @@ const projById = id => (S.projects || []).find(p => p.id === id);
 const projOf = c => projById(c.project) || null;
 const GREY = "#6E737B";
 const repoOf = c => (c.folder || c.cwd || "").replace(/\/\.claude\/worktrees\/.*$/, "");
+// Every folder a project covers: its own, the repos its agents work in, recent ones inside its folders.
+const projDirs = pj => [...new Set([...pj.folders, ...S.cards.filter(c => c.project === pj.id).map(repoOf),
+  ...S.dirs.filter(d => pj.folders.some(f => d.startsWith(f + "/")))].filter(d => d && d !== "~"))];
 const baseName = p => { const b = (p || "").replace(/\/+$/, "").split("/").pop(); return b === "~" || !b ? "home" : b; };
 const keyOf = (c, g) => g === "account" ? (accById(c.account) ? c.account : "") : g === "project" ? (projById(c.project) ? c.project : "") : g === "folder" ? repoOf(c) : "";
 function dimValues(g, cards) {   // [{key, label, hex, title}] in display order
@@ -660,7 +708,7 @@ function renderBoard() {
     return `<div class="bcard ${s}${startingIds.has(c.id) ? " starting" : ""}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}"${todo ? ` draggable="true" title="Drag to Working to start"` : ""}>
       <div class="r1"><span class="t">${esc(c.name)}</span><span class="age">${ago(c.updated)}</span></div>
       <div class="s">${esc(s === "failed" && !/^failed/i.test(st) ? "Failed · " + st : st)}</div>
-      <div class="m">${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}${pj && gb() !== "project" ? pdotH(pj) : ""}<span class="f">${esc(proj)}</span>${live}</div>${pendingBadge(c)}</div>`;
+      <div class="m">${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}${pj && gb() !== "project" ? pdotH(pj) : ""}<span class="f">${esc(proj)}</span>${live}</div>${pendingBadge(c)}${queueBadge(c)}</div>`;
   };
   const g = gb();
   $("#cols").classList.toggle("laned", LANED.includes(g));
@@ -715,7 +763,7 @@ async function startTodo(id) {
 
 /* ---------- pane ---------- */
 let term = null, fit = null, ws = null, wsFor = null;
-function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], c.kind, c.pending?.account || "", c.pending?.error || ""].join("|") : sel || "none"; }
+function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], !!brView[c.id], c.kind, c.pending?.account || "", c.pending?.error || ""].join("|") : sel || "none"; }
 const SCREENS = ["new", "accounts", "setup", "projects", "organize"];
 function renderPane() {
   if (loaded && S.setup && sel !== "accounts") sel = "setup";        // first run: no accounts.json yet
@@ -729,13 +777,15 @@ function renderPane() {
   const key = sel === "projects" ? "projects|" + JSON.stringify([S.projects, S.unsorted, S.accounts]) : SCREENS.includes(sel) ? sel : paneKey(c);
   if (p.dataset.key === key) { if (c) refreshPane(c); return; }   // keep typing / terminal alive
   p.dataset.key = key;
-  if (sel !== "new" && !(sel === "accounts" && loginFor && wsFor === "login-" + loginFor) && (!c || c.kind === "todo" || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
+  if (sel !== "new" && !(sel === "accounts" && loginFor && wsFor === "login-" + loginFor) && (!c || c.kind === "todo" || brView[c.id] || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
+  if (!(c && c.kind === "agent" && brView[c.id])) disconnectBrowser();
   if (sel === "new") return paneNew(p);
   if (sel === "accounts" || sel === "setup") return paneAccounts(p);
   if (sel === "projects") return paneProjects(p);
   if (sel === "organize") return paneOrganize(p);
   if (!c) return paneQuiet(p);
   if (c.kind === "todo") return paneTodo(p, c);
+  if (brView[c.id]) return paneBrowser(p, c);
   if (c.col === "needs" && !termView[c.id]) return paneAsk(p, c);
   return paneTerm(p, c);
 }
@@ -745,8 +795,9 @@ function head(c, actions = true) {
   const proj = c.folderName === "~" ? "home" : c.folderName;
   return `<div class="head"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
     <div class="ti"><label class="sr-only" hidden for="title">Name</label><input class="title" id="title" value="${esc(c.name)}" spellcheck="false" title="Click to rename">
-    <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span></div></div>
-    ${actions && c.col === "needs" ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
+    <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span id="qbadge">${queueBadge(c)}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span><span id="ckbadge">${checksBadge(c)}</span></div></div>
+    ${actions && c.kind === "agent" ? `<button class="btn quiet" data-toggle-br title="Shared browser (W)" aria-pressed="${!!brView[c.id]}"><i data-lucide="${brView[c.id] ? "square-terminal" : "globe"}" class="ic"></i>${brView[c.id] ? "Agent" : "Browser"}</button>` : ""}
+    ${actions && c.col === "needs" && !brView[c.id] ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
     <button class="ibtn" data-menu aria-label="More actions" title="More"><i data-lucide="ellipsis" class="ic"></i></button></div>`;
 }
 const micBtn = (target, cls = "") => S.voice ? `<button class="mic ${cls}" data-mic="${target}" title="Speak (V)" aria-label="Speak"><i data-lucide="mic" class="ic"></i></button>` : "";
@@ -758,7 +809,7 @@ function paneAsk(p, c) {
       <div class="chips"><button class="btn secondary" data-quick="Yes, go ahead.">Yes, go ahead</button><button class="btn secondary" data-quick="No — stop there and wait.">No, stop there</button><button class="btn secondary" data-quick="Explain that in more detail first.">Explain more</button></div>
     </div>
     <div class="col"><div class="peek"><div class="ph"><i data-lucide="square-terminal" class="ic"></i>Earlier<button data-toggle-term>Open terminal  t</button></div><div id="peek"><div class="ln">…</div></div></div></div></div>
-    <div class="foot"><div class="composer"><textarea id="reply" rows="1" placeholder="Reply to ${esc(c.name)}…">${esc(drafts[c.id] || "")}</textarea>${micBtn("reply")}<button class="send" data-send aria-label="Send" title="Send (Enter)"><i data-lucide="corner-down-left" class="ic"></i></button></div>
+    <div class="foot"><div class="qlist" id="qlist" style="margin-bottom:8px">${queueList(c)}</div><div class="composer"><textarea id="reply" rows="1" placeholder="Reply to ${esc(c.name)}…">${esc(drafts[c.id] || "")}</textarea>${micBtn("reply")}<button class="send" data-send aria-label="Send" title="Send (Enter)"><i data-lucide="corner-down-left" class="ic"></i></button></div>
     <div class="hint">Enter sends to the agent · Shift+Enter new line · ${S.voice ? "V to speak · " : ""}J/K next agent</div><div class="voice-note" id="vnote" hidden></div></div>`;
   icons(); grow($("#reply")); loadPeek(c); setTimeout(() => $("#reply")?.focus(), 0);
 }
@@ -771,6 +822,8 @@ async function loadPeek(c) {
 }
 function paneTerm(p, c) {
   p.innerHTML = `${head(c)}<div class="term" id="termBox"><div id="xt"></div><div class="cover" id="cover" hidden></div>${S.voice ? `<button class="mic tmic" data-mic="term" title="Speak into the terminal (V)" aria-label="Speak"><i data-lucide="mic" class="ic"></i></button>` : ""}</div>
+    <div class="qwrap"><div class="qlist" id="qlist">${queueList(c)}</div>
+      <div class="composer"><textarea id="qtext" rows="1" placeholder="Queue a prompt: it sends when ${esc(c.name)} is free and its account is under its limits">${esc(drafts["q" + c.id] || "")}</textarea><button class="send" data-qsend aria-label="Queue" title="Queue (Enter)"><i data-lucide="list-plus" class="ic"></i></button></div></div>
     <div class="tbar"><span ${accColor(c)}>${esc(accTitle(accOf(c)))}</span><span>type straight into the agent</span>${S.voice ? "<span>V speaks</span>" : ""}<span>Shift+Esc leaves the terminal</span></div>
     <div class="voice-note" id="vnote" hidden style="padding:0 32px 8px"></div>`;
   icons(); mountTerm(c.id);
@@ -795,8 +848,9 @@ function newTaskAccounts() {
 function paneNew(p) {
   if (newProj && !projById(newProj)) newProj = null;
   const { pj, allowed, autoOk } = newTaskAccounts(), projs = S.projects || [];
-  const dir = drafts.dir ?? (pj?.folders[0] || store.get("loft.dir." + newAcct) || S.dirs[0] || "");
-  const dirs = [...new Set([...(pj?.folders || []), ...S.dirs])];
+  const pdirs = pj ? projDirs(pj) : [];
+  const dir = drafts.dir ?? (pdirs[0] || store.get("loft.dir." + newAcct) || S.dirs[0] || "");
+  const dirs = [...new Set([...pdirs, ...S.dirs])];
   const best = autoOk ? autoPick(allowed) : null;
   const accSeg = multiAcc() ? `<span class="label">Account</span><div class="seg" role="group" aria-label="Account">${autoOk ? `<button data-newacct="auto" aria-pressed="${newAcct === "auto"}" title="The allowed account with the lowest 5-hour usage">Auto${best ? ` · ${esc(best.label)} has most left` : ""}</button>` : ""}${allowed.map(a => `<button data-newacct="${esc(a.id)}" aria-pressed="${newAcct === a.id}" title="${esc(accTitle(a))}">${dotH(a)}${esc(a.label)}</button>`).join("")}</div>` : "";
   const hint = pj && multiAcc() ? (allowed.length > 1 && pj.accounts.length ? `${esc(pj.name)} runs on ${allowed.map(a => esc(a.label)).join(" and ")}. Auto uses the one with the most 5-hour usage left.` : pj.accounts.length ? `${esc(pj.name)} runs on ${esc(allowed[0]?.label || "")}.` : "") : "";
@@ -805,6 +859,7 @@ function paneNew(p) {
     <div class="fields">${projs.length ? `<span class="label">Project</span><label class="folder pick" title="Project">${pj ? `<span class="dot" style="background:${pj.hex}"></span>` : `<span class="ring"></span>`}<select id="nproj" aria-label="Project"><option value="">No project</option>${projs.map(x => `<option value="${esc(x.id)}"${x.id === newProj ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select><i data-lucide="chevron-down" class="chev"></i></label>` : ""}
       ${accSeg}
       <span class="label">Folder</span><label class="folder" title="Project folder"><i data-lucide="folder" class="ic"></i><input id="ndir" list="dirs" value="${esc(dir)}" spellcheck="false" aria-label="Folder"><datalist id="dirs">${dirs.map(d => `<option value="${esc(d)}">`).join("")}</datalist></label>
+      ${pdirs.length > 1 ? `<div class="dchips" role="group" aria-label="${esc(pj.name)} folders">${pdirs.map(d => `<button data-ndir="${esc(d)}" aria-pressed="${d === dir}" title="${esc(d)}">${esc(d)}</button>`).join("")}</div>` : ""}
       ${hint ? `<span class="fhint">${hint}</span>` : ""}</div>
     <div class="row"><button class="btn primary" id="nStart"><i data-lucide="play" class="ic"></i>Start</button><button class="btn quiet" id="nTodo">Save to Todo</button><span class="hint" style="margin:0">Ctrl+Enter starts · the title is written for you${S.voice ? ` · say "…start it" at the end to start hands-free` : ""}</span></div>
     <div class="err" id="nerr"></div><div class="voice-note" id="vnote" hidden></div></div>`;
@@ -820,6 +875,34 @@ function paneQuiet(p) {
 function refreshPane(c) {   // light update without rebuilding (keeps drafts, focus, terminal)
   const a = $("#agoLabel"); if (a) a.textContent = ago(c.updated);
   const q = $("#askText"); if (q && c.detail && q.textContent !== c.detail) q.textContent = c.detail;
+  const ql = $("#qlist"), qh = queueList(c); if (ql && ql.dataset.h !== qh) { ql.dataset.h = qh; ql.innerHTML = qh; icons(); }
+  const qb = $("#qbadge"), bh = queueBadge(c); if (qb && qb.dataset.h !== bh) { qb.dataset.h = bh; qb.innerHTML = bh; icons(); }
+  const cb = $("#ckbadge"), ch = checksBadge(c); if (cb && cb.dataset.h !== ch) { cb.dataset.h = ch; cb.innerHTML = ch; if (BR.id === c.id && !BR.recording) brInfo(); }
+}
+/* ---------- prompt queue ---------- */
+function atTime(iso) {
+  const t = new Date(iso), hm = t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return t.toDateString() === new Date().toDateString() ? hm : t.toLocaleDateString([], { weekday: "short" }) + " " + hm;
+}
+function queueBadge(c) {
+  const q = c.queue; if (!q) return "";
+  const n = q.items.length, err = q.items.some(i => i.error), a = accOf(c);
+  const when = q.until ? `at ${atTime(q.until)}` : "";
+  const label = c.kind === "todo" ? `Starts after reset ${when}` : `${n} queued${when ? " · " + when : ""}`;
+  const tip = err ? q.items.find(i => i.error).error : q.until ? `${a.label} is at its limit; resets ${atTime(q.until)}` : "Sends when this turn ends";
+  return `<span class="pbadge${err ? " err" : ""}" style="--ac:${a.hex}" title="${esc(tip)}"><i data-lucide="${q.until ? "clock" : "list-ordered"}" class="ic"></i><span class="lb">${esc(label.trim())}</span>${c.kind === "todo" ? `<button data-qclear="${esc(c.id)}" aria-label="Don't start it by itself" title="Cancel"><i data-lucide="x" class="ic"></i></button>` : ""}</span>`;
+}
+function queueList(c) {
+  const items = c.queue?.items || []; if (!items.length || c.kind === "todo") return "";
+  return `<div class="qh"><i data-lucide="${c.queue.until ? "clock" : "list-ordered"}" class="ic" style="width:12px;height:12px"></i>${c.queue.until ? `Waiting for the limit to reset at ${esc(atTime(c.queue.until))}` : "Sends after this turn, one at a time"}<button data-qclear="${esc(c.id)}">Clear all</button></div>` +
+    items.map((i, n) => `<div class="qi"><span class="n">${n + 1}</span><span class="tx">${esc(i.text)}${i.error ? `<span class="er">Couldn't send: ${esc(i.error)}</span>` : ""}</span><button data-qrm="${esc(i.id)}" aria-label="Remove from queue" title="Remove"><i data-lucide="x" class="ic"></i></button></div>`).join("");
+}
+async function queuePrompt() {
+  const c = cardOf(sel), box = $("#qtext"), text = (box?.value || "").trim(); if (!c || !text) return;
+  drafts["q" + c.id] = ""; box.value = ""; grow(box);
+  const r = await act(c.id, "reply", { text, queue: true }, true);
+  if (!r) { drafts["q" + c.id] = text; if ($("#qtext") && sel === c.id) $("#qtext").value = text; return; }
+  toast(r.message); try { apply(await api("/api/state")); } catch {}
 }
 function grow(t) { if (!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; }
 
@@ -936,6 +1019,176 @@ function disconnectTerm() { if (ws) { const w = ws; ws = null; try { w.close(); 
 function leaveTerm() { const c = cardOf(sel); if (c && c.col === "needs") { termView[c.id] = false; render(); } else term?.blur(); }
 const paste = t => ws && ws.readyState === 1 && ws.send(new TextEncoder().encode("\x1b[200~" + t + "\x1b[201~"));
 
+/* ---------- shared agent browser ---------- */
+// One headless Chromium per agent (loft/browser.py), streamed as JPEG frames over /ws/browser/<id>.
+// Your mouse and keys go to the page; Record turns clicks into a per-project check; Comment sends
+// the agent a note about the element you click; Save login keeps this project's session.
+let BR = { id: null, ws: null, url: "", errs: [], steps: [], recording: false, expect: false, comment: false, mobile: false, take: false, info: null, mcp: false, autoLogin: false, blob: null };
+function checksBadge(c) {
+  const k = c.browser?.checks; if (!k) return c.browser?.running ? `<span class="sep">·</span><span class="st-muted">checking…</span>` : "";
+  if (c.browser.running) return `<span class="sep">·</span><span class="st-muted">checking…</span>`;
+  if (k.skipped) return `<span class="sep">·</span><span class="st-muted" title="${esc(k.skipped)}">checks skipped</span>`;
+  return `<span class="sep">·</span><span class="${k.ok ? "ck-ok" : "ck-bad"}" title="Recorded browser checks">${k.ok ? "✓" : "✗"} ${k.passed}/${k.total} checks${!k.ok && k.attempts > 3 ? " · gave up, needs you" : ""}</span>`;
+}
+function disconnectBrowser() { if (BR.ws) { const w = BR.ws; BR.ws = null; try { w.close(); } catch {} } if (BR.blob) URL.revokeObjectURL(BR.blob); BR = { ...BR, id: null, blob: null, recording: false, expect: false, comment: false, take: false, errs: [] }; }
+const bsend = m => BR.ws && BR.ws.readyState === 1 && BR.ws.send(JSON.stringify(m));
+function paneBrowser(p, c) {
+  p.innerHTML = `${head(c)}
+    <div class="bbar">
+      <button class="ibtn" data-bb="back" title="Back" aria-label="Back"><i data-lucide="chevron-left" class="ic"></i></button>
+      <button class="ibtn" data-bb="reload" title="Reload" aria-label="Reload"><i data-lucide="rotate-cw" class="ic"></i></button>
+      <input id="burl" aria-label="Address" spellcheck="false" placeholder="URL or port, e.g. 5173" value="${esc(BR.id === c.id ? BR.url : "")}">
+      <span id="bports"></span>
+      <button class="ibtn" data-bb="mobile" title="Phone size" aria-label="Phone size" aria-pressed="false"><i data-lucide="smartphone" class="ic"></i></button>
+      <button class="btn quiet" data-bb="comment" aria-pressed="false" title="Click an element, write a note: it goes to the agent"><i data-lucide="message-square-plus" class="ic"></i>Comment</button>
+      <button class="btn quiet rec" data-bb="rec" aria-pressed="false" title="Record a flow as a check for this project"><i data-lucide="circle-dot" class="ic"></i>Record</button>
+      <button class="btn quiet" data-bb="login" title="Save or use this project's login"><i data-lucide="key-round" class="ic"></i>Login</button>
+      <button class="btn quiet" data-bb="take" hidden title="Tell the agent you're driving"><i data-lucide="hand" class="ic"></i>Take over</button>
+      <button class="berr" data-bb="errs" id="berr" hidden></button>
+    </div>
+    <div class="bview" id="bview"><img id="bimg" tabindex="0" draggable="false" alt="The agent's browser"><div class="cover" id="bcover"><div><i data-lucide="loader" class="ic"></i>Opening the browser…</div></div></div>
+    <div class="bside" id="bside"></div>`;
+  icons(); mountBrowser(c);
+}
+function brTake() { const tk = $('[data-bb="take"]'); if (tk) tk.hidden = !(BR.mcp && statusOf(cardOf(BR.id) || {}) === "running"); }
+function mountBrowser(c) {
+  const img = $("#bimg"); brInput(img);
+  if (BR.id === c.id && BR.ws && BR.ws.readyState <= 1) {   // pane rebuilt (status changed): keep the stream and any recording
+    if (BR.blob) { img.src = BR.blob; $("#bcover").hidden = true; }
+    brTake(); brPorts(); brMarks(); return BR.recording ? brSide() : brInfo();
+  }
+  disconnectBrowser(); BR.id = c.id; BR.steps = []; BR.url = "";
+  const sock = new WebSocket(`ws://${location.host}/ws/browser/${c.id}?t=${TOKEN}`); sock.binaryType = "blob"; BR.ws = sock;
+  sock.onmessage = e => { if (sock !== BR.ws) return; if (typeof e.data === "string") return brEvent(JSON.parse(e.data)); brFrame(e.data); };
+  sock.onclose = () => { if (sock !== BR.ws) return; BR.ws = null; BR.recording = BR.expect = false; brMarks(); const cv = $("#bcover"); if (cv) { cv.hidden = false; cv.innerHTML = `<div>Browser closed<button class="btn secondary" data-bb="reconnect">Reconnect</button></div>`; } };
+  brInfo(); brMarks();
+}
+function brFrame(blob) {
+  const img = $("#bimg"); if (!img) return;
+  const u = URL.createObjectURL(blob); img.src = u; if (BR.blob) URL.revokeObjectURL(BR.blob); BR.blob = u;
+  const cv = $("#bcover"); if (cv && !cv.hidden) cv.hidden = true;
+}
+function brEvent(m) {
+  if (m.type === "hello") {
+    BR.mcp = m.mcp; BR.ports = m.ports || []; brPorts(); brTake();
+    if (m.recording) { BR.recording = true; BR.steps = m.recording; brMarks(); brSide(); }
+    if ((!BR.url || BR.url === "about:blank") && BR.ports.length) { BR.autoLogin = m.login; bsend({ type: "nav", url: `localhost:${BR.ports[0]}` }); }
+    else if (!BR.ports.length && (!BR.url || BR.url === "about:blank")) { const cv = $("#bcover"); if (cv) cv.innerHTML = `<div>No dev server running in this agent's folder<button class="btn secondary" data-bb="askserve">Ask the agent to start one</button><span class="hint">or type a URL above</span></div>`; icons(); }
+    return;
+  }
+  if (m.type === "url") { BR.url = m.url; const u = $("#burl"); if (u && document.activeElement !== u) u.value = m.url === "about:blank" ? "" : m.url;
+    if (BR.autoLogin && /^https?:/.test(m.url)) { BR.autoLogin = false; setTimeout(() => bsend({ type: "login-use" }), 300); } return; }
+  if (m.type === "err") { BR.errs.push(m.text); if (BR.errs.length > 50) BR.errs.shift(); const b = $("#berr"); if (b) { b.hidden = false; b.textContent = `● ${BR.errs.length} error${BR.errs.length > 1 ? "s" : ""}`; } return; }
+  if (m.type === "steps") {   // from you or the agent: whoever recorded, the card shows it live
+    BR.steps = m.steps || [];
+    if (m.on === false) { BR.recording = BR.expect = false; brMarks(); return brInfo(); }
+    if (!BR.recording) { BR.recording = true; brMarks(); }
+    return brSide();
+  }
+  if (m.type === "toast") return toast(m.text, m.err);
+  if (m.type === "saved" || m.type === "login") return brInfo();
+  if (m.type === "recoff") { BR.recording = BR.expect = false; brMarks(); return brInfo(); }
+}
+function brPorts() { const el = $("#bports"); if (el) el.innerHTML = (BR.ports || []).map(p => `<button class="bport" data-bport="${p}" title="Open localhost:${p}">:${p}</button>`).join(""); }
+function brMarks() {
+  const set = (k, v) => { const b = $(`[data-bb="${k}"]`); if (b) b.setAttribute("aria-pressed", !!v); };
+  set("mobile", BR.mobile); set("comment", BR.comment); set("rec", BR.recording); set("take", BR.take);
+  const r = $('[data-bb="rec"]'); if (r) r.lastChild.textContent = BR.recording ? "Recording" : "Record";
+  const t = $('[data-bb="take"]'); if (t) t.lastChild.textContent = BR.take ? "Hand back" : "Take over";
+  $("#bview")?.classList.toggle("picking", BR.comment || BR.expect);
+}
+async function brInfo() {
+  const id = BR.id; if (!id) return;
+  try { BR.info = await api(`/api/browser/${id}`); } catch (e) { return; }
+  if (BR.id !== id) return; BR.ports = BR.info.ports; brPorts(); brSide();
+}
+function brSide() {
+  const el = $("#bside"); if (!el) return;
+  if (BR.recording) {
+    el.innerHTML = `<div class="row"><span class="label alert">Recording</span><span class="grow hint" style="margin:0">Click through the flow, or ask the agent to walk it: both are recorded. “Check text” then click some text to assert it's there.</span>
+        <button class="btn quiet" data-bb="expect" aria-pressed="${BR.expect}"><i data-lucide="text-search" class="ic"></i>Check text</button></div>
+      ${BR.steps.map((s, i) => `<div class="mono">${i + 1}. ${esc(stepText(s))}</div>`).join("")}
+      <div class="row"><input id="bname" placeholder="Name this check, e.g. Log in and open settings" style="flex:1"><button class="btn primary" data-bb="recsave">Save check</button><button class="btn quiet" data-bb="recdrop">Discard</button></div>`;
+    icons(); return;
+  }
+  const I = BR.info; if (!I) { el.innerHTML = ""; return; }
+  const res = I.results, byId = Object.fromEntries((res?.results || []).map(r => [r.id, r]));
+  const checks = I.checks.map(k => { const r = byId[k.id];
+    return `<div class="row"><span class="${r ? (r.ok ? "ok" : "bad") : "st-muted"}">${r ? (r.ok ? "✓" : "✗") : "○"}</span><span class="grow">${esc(k.name)} <span class="st-muted">· ${k.steps.length} steps${k.pending ? " · recorded by an agent, waiting for you" : ""}</span></span>${k.pending ? `<button class="btn secondary" data-ckok="${k.id}" title="Every agent on this project must pass it from now on">Approve</button>` : ""}<button class="ibtn" data-ckdel="${k.id}" title="Delete check" aria-label="Delete check"><i data-lucide="trash-2" class="ic"></i></button></div>
+      ${r && !r.ok ? `<div class="mono bad">step ${r.step}: ${esc(r.error)}${r.shot ? `<br>${esc(r.shot)}` : ""}</div>` : ""}`; }).join("");
+  el.innerHTML = `<div class="row"><span class="label">Checks for this project</span><span class="grow hint" style="margin:0">${I.checks.length ? (I.running ? "running…" : res?.skipped ? esc(res.skipped) : res?.at ? `last run ${((a) => a === "now" ? "just now" : a + " ago")(ago(new Date(res.at * 1000).toISOString()))} on ${esc(res.base || "")}` : "they run each time the agent finishes a turn") : "none yet: Record a flow and every agent on this project has to pass it"}</span>
+      ${I.checks.length ? `<button class="btn secondary" data-bb="run" ${I.running ? "disabled" : ""}><i data-lucide="play" class="ic"></i>Run now</button>` : ""}</div>
+    ${checks}
+    <div class="row"><span class="label">Login</span><span class="grow hint" style="margin:0">${I.login ? `saved for ${esc(I.login.host)} · used by previews and checks` : "none saved: log in here once, then Login → Save"}</span>${I.login ? `<button class="btn quiet" data-bb="forget">Forget</button>` : ""}</div>
+    ${BR.errs.length && BR.showErrs ? `<div class="label">Page errors</div>${BR.errs.slice(-12).map(t => `<div class="mono bad">${esc(t)}</div>`).join("")}` : ""}`;
+  icons();
+}
+function stepText(s) { return s.action === "goto" ? `open ${s.path}` : s.action === "click" ? `click ${s.desc || s.css}`
+  : s.action === "fill" ? (s.secret ? `fill ${s.desc || s.css} (password: not recorded, the saved login covers it)` : `fill ${s.desc || s.css} with “${s.value}”`)
+  : s.action === "type" ? `type “${s.text}”` : s.action === "press" ? `press ${s.key}` : `see “${s.text}”`; }
+function brInput(img) {
+  const pos = e => { const r = img.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
+  const mods = e => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
+  const btn = b => ["left", "middle", "right"][b] || "left";
+  let pend = null, picked = false;
+  img.addEventListener("mousedown", e => { e.preventDefault(); img.focus(); const p = pos(e);
+    if (BR.comment) { picked = true; return brNote(e, p); }
+    if (BR.expect) { picked = true; BR.expect = false; brMarks(); brSide(); return bsend({ type: "mouse", kind: "mousePressed", expect: true, ...p }); }
+    picked = false; bsend({ type: "mouse", kind: "mousePressed", button: btn(e.button), clicks: e.detail || 1, mods: mods(e), ...p }); });
+  img.addEventListener("mouseup", e => { if (picked) return; bsend({ type: "mouse", kind: "mouseReleased", button: btn(e.button), clicks: e.detail || 1, mods: mods(e), ...pos(e) }); });
+  img.addEventListener("mousemove", e => { const p = pos(e); if (!pend) requestAnimationFrame(() => { bsend({ type: "mouse", kind: "mouseMoved", mods: mods(e), ...pend }); pend = null; }); pend = p; });
+  img.addEventListener("wheel", e => { e.preventDefault(); bsend({ type: "mouse", kind: "mouseWheel", dx: e.deltaX, dy: e.deltaY, ...pos(e) }); }, { passive: false });
+  img.addEventListener("contextmenu", e => e.preventDefault());
+  img.addEventListener("keydown", e => { e.stopPropagation();
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") return;   // the paste event sends it
+    e.preventDefault();
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) return bsend({ type: "key", text: e.key });
+    bsend({ type: "key", key: e.key, mods: mods(e) }); });
+  img.addEventListener("paste", e => { const t = e.clipboardData?.getData("text"); if (t) { e.preventDefault(); bsend({ type: "key", text: t }); } });
+}
+function brNote(e, p) {
+  document.querySelector(".bnote")?.remove();
+  const v = $("#bview"), r = v.getBoundingClientRect(), n = document.createElement("div"); n.className = "bnote";
+  n.style.left = Math.min(r.width - 290, Math.max(8, e.clientX - r.left)) + "px"; n.style.top = Math.min(r.height - 130, Math.max(8, e.clientY - r.top + 10)) + "px";
+  n.innerHTML = `<textarea id="bnotetext" placeholder="What's wrong here? It goes to the agent with a screenshot."></textarea><div class="row" style="display:flex;gap:6px;justify-content:flex-end"><button class="btn quiet" data-bb="notex">Cancel</button><button class="btn primary" data-bb="notego">Send</button></div>`;
+  n.dataset.x = p.x; n.dataset.y = p.y; v.append(n);
+  const ta = n.querySelector("textarea"); ta.focus();
+  ta.addEventListener("keydown", k => { k.stopPropagation(); if (k.key === "Enter" && !k.shiftKey) { k.preventDefault(); brClick(n.querySelector('[data-bb="notego"]')); } if (k.key === "Escape") brClick(n.querySelector('[data-bb="notex"]')); });
+}
+async function brClick(t) {
+  const a = t.dataset.bb, id = BR.id;
+  if (t.dataset.bport) return bsend({ type: "nav", url: `localhost:${t.dataset.bport}` });
+  if (t.dataset.ckok) { try { toast((await api(`/api/browser/${id}/check-approve`, { id: t.dataset.ckok })).message); } catch (e) { toast(e.message, true); } return brInfo(); }
+  if (t.dataset.ckdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.title = "Click again to delete"; return; } try { toast((await api(`/api/browser/${id}/check-delete`, { id: t.dataset.ckdel })).message); } catch (e) { toast(e.message, true); } return brInfo(); }
+  if (!a) return;
+  if (a === "back" || a === "reload") return bsend({ type: a });
+  if (a === "reconnect") { const c = cardOf(id); if (c) mountBrowser(c); return; }
+  if (a === "mobile") { BR.mobile = !BR.mobile; brMarks(); return bsend({ type: "viewport", mobile: BR.mobile }); }
+  if (a === "comment") { BR.comment = !BR.comment; BR.expect = false; brMarks(); if (BR.comment) toast("Click the element you want to comment on"); return; }
+  if (a === "notex") { document.querySelector(".bnote")?.remove(); BR.comment = false; return brMarks(); }
+  if (a === "notego") { const n = t.closest(".bnote"), note = n.querySelector("textarea").value.trim(); if (!note) return toast("Write what's wrong first.", true);
+    bsend({ type: "comment", x: +n.dataset.x, y: +n.dataset.y, note }); n.remove(); BR.comment = false; return brMarks(); }
+  if (a === "rec") { if (BR.recording) return; BR.recording = true; BR.comment = false; BR.steps = []; bsend({ type: "rec", on: true }); brMarks(); return brSide(); }
+  if (a === "expect") { BR.expect = !BR.expect; brMarks(); return brSide(); }
+  if (a === "recsave") { const name = $("#bname")?.value.trim(); if (!name) { toast("Name the check first.", true); return $("#bname")?.focus(); } BR.recording = false; BR.expect = false; bsend({ type: "rec", on: false, name }); brMarks(); return brSide(); }
+  if (a === "recdrop") { BR.recording = false; BR.expect = false; bsend({ type: "rec", on: false }); brMarks(); return brInfo(); }
+  if (a === "login") return openLoginMenu(t);
+  if (a === "forget") { try { toast((await api(`/api/browser/${id}/login-forget`, {})).message); } catch (e) { toast(e.message, true); } return brInfo(); }
+  if (a === "run") { t.disabled = true; if (BR.info) BR.info.running = true; brSide(); const base = /^https?:/.test(BR.url) ? new URL(BR.url).origin : "";
+    try { const r = await api(`/api/browser/${id}/run`, { base }); toast(r.message, r.results && r.results.ok === false); } catch (e) { toast(e.message, true); } return brInfo(); }
+  if (a === "take") { BR.take = !BR.take; brMarks(); try { toast((await api(`/api/browser/${id}/takeover`, { on: BR.take })).message); } catch (e) { toast(e.message, true); } return; }
+  if (a === "errs") { BR.showErrs = !BR.showErrs; return brSide(); }
+  if (a === "askserve") { const r = await act(id, "reply", { text: "Start this project's dev server in the background and leave it running, so I can preview your work in Loft's shared browser. Tell me the port." }); if (r) toast("Asked the agent to start its dev server"); return; }
+}
+function openLoginMenu(btn) {
+  const m = $("#menu"), saved = !!BR.info?.login;
+  m.innerHTML = `<button data-bblogin="save"><i data-lucide="save" class="ic"></i><span>Save login from this page</span></button>
+    <button data-bblogin="use" ${saved ? "" : "disabled"}><i data-lucide="log-in" class="ic"></i><span>Use saved login here</span></button>`;
+  const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = (innerWidth - r.right) + "px"; m.style.left = "auto"; m.className = "menu"; m.dataset.for = "login"; m.hidden = false; icons();
+  m.querySelectorAll("[data-bblogin]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); closeMenu(); bsend({ type: b.dataset.bblogin === "save" ? "login-save" : "login-use" }); }, { once: true }));
+}
+document.addEventListener("keydown", e => { if (e.target?.id === "burl" && e.key === "Enter") { e.preventDefault(); const v = e.target.value.trim(); if (v) bsend({ type: "nav", url: /^\d+$/.test(v) ? `localhost:${v}` : v }); $("#bimg")?.focus(); } }, true);
+
 /* ---------- voice ---------- */
 let rec = null, recTarget = null, chunks = [];
 async function toggleVoice(target) {
@@ -979,6 +1232,7 @@ async function sendReply(text) {
   toast(`Sending to ${c.name}…`);
   const r = await act(c.id, "reply", { text }, true);
   if (!r) { drafts[c.id] = text; const b2 = $("#reply"); if (b2 && sel === c.id) { b2.value = text; grow(b2); } return; }
+  if (r.message !== "Sent") { toast(r.message); try { apply(await api("/api/state")); } catch {} return; }   // queued: stay on it
   toast(`Sent to ${c.name}`);
   if (sel === c.id) { const next = needsList().find(x => x.id !== c.id); if (next) setSel(next.id); }
 }
@@ -1264,6 +1518,8 @@ document.addEventListener("click", async e => {
   if (!e.target.closest("#menu") && !e.target.closest("[data-menu]") && !e.target.closest("[data-settings]") && !e.target.closest("[data-dd]")) closeMenu();
   if (POP && !e.target.closest("[data-accpop], [data-billsto]")) closePop();
   const t = e.target.closest("button, .item, .bcard"); if (!t || t.closest("#projDlg, #phoneDlg")) return;
+  if (t.dataset.qrm || t.dataset.qclear) { e.stopPropagation(); const id = t.dataset.qclear || sel; const r = await act(id, "queue", t.dataset.qrm ? { item: t.dataset.qrm } : {}, true); if (r) toast(r.message); try { apply(await api("/api/state")); } catch {} return; }
+  if (t.hasAttribute("data-qsend")) return queuePrompt();
   if (t.dataset.pcancel) { e.stopPropagation(); const r = await act(t.dataset.pcancel, "account", { cancel: true }, true); if (r) toast(r.message); try { apply(await api("/api/state")); } catch {} return; }
   if (t.dataset.accpop) { if (POP?.id === t.dataset.accpop) return closePop(); if ((S.accounts || []).length > 1) openPop(t.dataset.accpop, t); return; }
   if (t.hasAttribute("data-billsto")) { const id = sel; closeMenu(); return openPop(id, document.querySelector("[data-menu]") || t); }
@@ -1289,12 +1545,15 @@ document.addEventListener("click", async e => {
   if (t.hasAttribute("data-back")) return setSel(null);
   if (t.hasAttribute("data-toggle-done")) { showDone = !showDone; renderInbox(); return renderBoard(); }
   if (t.hasAttribute("data-toggle-term")) { const c = cardOf(sel); if (c?.col === "needs") { drafts[c.id] = $("#reply")?.value || ""; termView[c.id] = !termView[c.id]; render(); } return; }
+  if (t.hasAttribute("data-toggle-br")) { const c = cardOf(sel); if (c?.kind === "agent") { brView[c.id] = !brView[c.id]; render(); } return; }
+  if (t.closest(".bbar, .bside, .bnote")) return brClick(t);
   if (t.hasAttribute("data-quick")) return sendReply(t.dataset.quick);
   if (t.hasAttribute("data-send")) return sendReply();
   if (t.dataset.mic) return toggleVoice(t.dataset.mic);
   if (t.hasAttribute("data-reconnect")) { wsFor = null; ws = null; return mountTerm(sel); }
   if (t.hasAttribute("data-menu")) return $("#menu").hidden || $("#menu").dataset.for !== "card" ? openMenu(t) : closeMenu();
   if (t.dataset.newacct) { drafts.dir = $("#ndir")?.value; drafts.new = $("#nprompt").value; newAcct = t.dataset.newacct; store.set("loft.newAcct", newAcct); $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.dataset.ndir) { $("#ndir").value = drafts.dir = t.dataset.ndir; document.querySelectorAll("[data-ndir]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
   if (t.id === "nStart") return submitNew(true);
   if (t.id === "nTodo") return submitNew(false);
   if (t.hasAttribute("data-start")) { const p = $("#tprompt").value.trim(); if (!p) { toast("Write or say the prompt first.", true); return; } t.disabled = true; const r = await act(sel, "start", { prompt: p }); t.disabled = false; const m = /started ([0-9a-f]{8})/.exec(r?.message || ""); if (m) waitOpen(m[1]); return; }
@@ -1325,6 +1584,7 @@ document.addEventListener("keydown", e => {
   if (inTerm) return;                                  // the terminal owns the keyboard (Shift+Esc leaves)
   const typing = /INPUT|TEXTAREA/.test(ae?.tagName);
   if (ae?.id === "reply" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return sendReply(); }
+  if (ae?.id === "qtext" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return queuePrompt(); }
   if (ae?.id === "nprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return submitNew(true); }
   if (ae?.id === "tprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $("[data-start]")?.click(); }
   if (ae?.id === "title" && e.key === "Enter") return ae.blur();
@@ -1349,6 +1609,7 @@ document.addEventListener("keydown", e => {
   }
   else if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
   else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+  else if (e.key === "w") { const c = cardOf(sel); if (c?.kind === "agent") { e.preventDefault(); brView[c.id] = !brView[c.id]; render(); } }
   else if (e.key === "t") { const c = cardOf(sel); if (c?.col === "needs") { e.preventDefault(); termView[c.id] = !termView[c.id]; render(); } else if (term) { e.preventDefault(); term.focus(); } }
 });
 
@@ -1371,6 +1632,28 @@ document.addEventListener("drop", e => {
   if (!dragId) return; const ok = e.target.closest?.('.bcol[data-col="running"]'); e.preventDefault();
   const id = dragId; dragId = null; clearDrop(); if (ok) startTodo(id); else if (boardStale) renderBoard();
 });
+// Two-finger swipe left on an inbox row or board card archives it (a working agent is stopped first).
+let sw = null;
+document.addEventListener("wheel", e => {
+  const el = e.target.closest?.("#list .item[data-id], #cols .bcard[data-id]");
+  if (!sw && (!el || e.deltaX <= 0 || Math.abs(e.deltaX) <= Math.abs(e.deltaY))) return;
+  e.preventDefault();
+  if (!sw) { const c = cardOf(el.dataset.id); if (!c) return; sw = { el, x: 0, id: c.id };
+    el.dataset.swl = c.kind === "todo" ? "Delete" : c.col === "running" ? "Stop & archive" : "Archive"; el.classList.add("swiping"); }
+  const w = sw.el.offsetWidth; sw.x = Math.min(w, Math.max(0, sw.x + e.deltaX));
+  sw.el.style.transform = `translateX(${-sw.x}px)`; sw.el.style.setProperty("--sw", sw.x + "px"); sw.el.classList.toggle("swipe-go", sw.x > w * .4);
+  clearTimeout(sw.t); sw.t = setTimeout(swipeEnd, 140);
+}, { passive: false });
+async function swipeEnd() {
+  const { el, x, id } = sw, go = x > el.offsetWidth * .4; sw = null;
+  el.classList.remove("swiping", "swipe-go"); el.style.transform = ""; el.style.removeProperty("--sw");
+  const c = cardOf(id); if (!go || !c) return;
+  if (c.kind !== "todo" && c.col === "running") await act(id, "stop", {}, true);
+  let r = await act(id, "archive", {}, true);
+  for (let i = 0; c.col === "running" && /stop it first/.test(r?.message || "") && i < 8; i++) { await new Promise(f => setTimeout(f, 1000)); r = await act(id, "archive", {}, true); }
+  if (r) toast(r.message);
+  if (sel === id) setSel(null);
+}
 document.addEventListener("dragend", () => { if (!dragId) return; dragId = null; clearDrop(); if (boardStale) renderBoard(); });
 
 /* ---------- live data ---------- */

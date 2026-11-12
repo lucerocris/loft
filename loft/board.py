@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import accounts as A
+from . import browser as BR
 from . import core as C
 from . import paths
 from . import projects as P
@@ -132,6 +133,7 @@ def load_cards(show_all_done):
             "failed": st.get("state") == "failed",
             "links": [ch.get("href") for ch in (st.get("children") or []) if isinstance(ch, dict) and ch.get("href")],
             "pending": _pending_view(jid),
+            "queue": _queue_view(jid, acc["id"] if acc else None, cfg),
         })
     for t in load_todos():
         cwd = os.path.expanduser(t.get("cwd") or "~")
@@ -141,6 +143,7 @@ def load_cards(show_all_done):
             "cwd": cwd, "folderName": Path(cwd).name, "projectPin": t.get("project"),
             "updated": C.parse_t(t.get("created") or ""), "live": False, "pinned": False, "failed": False, "links": [],
             "pending": None,
+            "queue": {"items": [], "until": limit_until(todo_account(t, cfg)["id"], cfg) or ""} if t.get("queued") else None,
         })
     for c in cards:
         c["folder"] = c["cwd"]
@@ -459,6 +462,141 @@ def apply_pending(cards=None, cfg=None, log=print):
     return done
 
 
+# ---------------------------------------------------------------- prompt queue
+# Prompts wait in <job>/loft-queue.json until the agent is out of Working and its
+# account is under its 5-hour and 7-day limits; the server's poll loop sends them
+# one at a time. A todo started while its account is limited is marked "queued"
+# and launched by the same loop once the limit resets.
+
+QUEUE = "loft-queue.json"
+QUEUE_GAP = 20      # seconds after a send before the next: state.json lags the turn's start
+QUEUE_TRIES = 3     # failed sends before an item is left with its error showing
+
+
+def queue_read(jid):
+    try:
+        q = json.loads((jobs() / jid / QUEUE).read_text())
+        return q if isinstance(q, dict) and isinstance(q.get("items"), list) else {"items": []}
+    except Exception:
+        return {"items": []}
+
+
+def queue_write(jid, q, keep=False):
+    """Save a queue; an empty one is deleted unless keep (to remember when it last sent)."""
+    f = jobs() / jid / QUEUE
+    if not q.get("items") and not keep:
+        f.unlink(missing_ok=True)
+        return
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(q, indent=2))
+    tmp.replace(f)
+
+
+def queue_add(jid, text):
+    """Append a prompt; returns how many are now waiting."""
+    q = queue_read(jid)
+    q["items"].append({"id": uuid.uuid4().hex[:8], "text": text, "added": now_utc().isoformat()})
+    queue_write(jid, q)
+    return len(q["items"])
+
+
+def queue_remove(jid, item_id=None):
+    """Drop one item, or all of them when item_id is None. True if anything went."""
+    q = queue_read(jid)
+    keep = [] if item_id is None else [i for i in q["items"] if i["id"] != item_id]
+    if len(keep) == len(q["items"]):
+        return False
+    q["items"] = keep
+    queue_write(jid, q)
+    return True
+
+
+def limit_until(acc_id, cfg=None, now=None):
+    """The reset time (ISO) if the account is at its 5-hour or 7-day limit, else None;
+    "" when it is at a limit with no known reset. A reset already past counts as free:
+    the cached usage can lag the reset by a few minutes."""
+    acc = A.get(acc_id, cfg) if acc_id else None
+    if not acc:
+        return None
+    u = U.get(acc)
+    now = now or now_utc()
+    hit = []
+    for pct, reset in ((u["five"], u["fiveReset"]), (u["seven"], u["sevenReset"])):
+        if pct is None or pct < 100:
+            continue
+        t = C.parse_t(reset) if reset else None
+        if t and t <= now:
+            continue
+        hit.append(t)
+    if not hit:
+        return None
+    known = [t for t in hit if t]
+    return max(known).isoformat() if len(known) == len(hit) else ""
+
+
+def busy(card):
+    return card.get("col") == "running" or card.get("state") == "working"
+
+
+def _queue_view(jid, acc_id, cfg):
+    q = queue_read(jid)
+    if not q["items"]:
+        return None
+    return {"items": [{"id": i["id"], "text": i["text"], "error": i.get("error") or ""} for i in q["items"]],
+            "until": limit_until(acc_id, cfg) or ""}
+
+
+def queue_due(cards=None, cfg=None, now=None):
+    """Take what can go now off the queues. Returns ("send", card, item) for prompts and
+    ("start", todo, None) for queued todos. The caller sends them outside its lock and
+    hands failures back to queue_failed."""
+    cfg = cfg or A.load()
+    now = now or now_utc()
+    cards = cards if cards is not None else load_cards(True)
+    by_id = {c["id"]: c for c in cards}
+    out = []
+    for f in jobs().glob(f"*/{QUEUE}"):
+        jid = f.parent.name
+        card = by_id.get(jid)
+        if not card:
+            continue                    # archived or finished elsewhere; its folder moved with it
+        q = queue_read(jid)
+        if not q["items"] or busy(card) or limit_until(card.get("account"), cfg, now) is not None:
+            continue
+        last = C.parse_t(q.get("sentAt") or "")
+        if last and (now - last).total_seconds() < QUEUE_GAP:
+            continue
+        item = q["items"][0]
+        if item.get("tries", 0) >= QUEUE_TRIES:
+            continue                    # stuck; the card shows the error until removed
+        q["items"] = q["items"][1:]
+        q["sentAt"] = now.isoformat()
+        queue_write(jid, q, keep=True)  # keeps sentAt so the next prompt still waits its gap
+        out.append(("send", card, item))
+    todos = load_todos()
+    ready = [t for t in todos if t.get("queued") and limit_until(todo_account(t, cfg)["id"], cfg, now) is None]
+    if ready:
+        save_todos([t for t in todos if t not in ready])
+        out += [("start", t, None) for t in ready]
+    return out
+
+
+def queue_failed(kind, x, item, err):
+    """Put a failed prompt back at the front with its error, or a failed todo back in Todo."""
+    if kind == "start":
+        save_todos(load_todos() + [{**x, "queued": False}])
+        return
+    q = queue_read(x["id"])
+    q["items"].insert(0, {**item, "tries": item.get("tries", 0) + 1, "error": err})
+    queue_write(x["id"], q)
+
+
+def queue_pending():
+    """True while anything waits: a queued prompt or a queued todo."""
+    return any(queue_read(f.parent.name)["items"] for f in jobs().glob(f"*/{QUEUE}")) \
+        or any(t.get("queued") for t in load_todos())
+
+
 def act_archive(card):
     if card["kind"] == "todo":
         save_todos([t for t in load_todos() if t["id"] != card["id"]]); return "todo deleted"
@@ -470,6 +608,10 @@ def act_archive(card):
     shutil.move(str(jobs() / card["id"]), str(dest / card["id"]))
     try:
         pins_write([p for p in pins_read() if p != card["id"]])
+    except Exception:
+        pass
+    try:
+        BR.stop(card["id"])   # its shared browser and profile go with it
     except Exception:
         pass
     return f"archived to {str(dest).replace(str(HOME), '~')}"
@@ -503,13 +645,22 @@ def launch_todo(todo):
         return None, f"folder missing: {cwd}"
     cfg = A.load()
     acc = todo_account(todo, cfg)
-    cmd = [paths.claude_bin(), "--bg", "--name", todo.get("title") or "agent", todo["prompt"]]
+    try:   # web project: a browser the agent shares with the card (see loft/browser.py)
+        br = BR.prepare(cwd)
+    except Exception:
+        br = None
+    extra = ["--mcp-config", BR.mcp_config(br), "--append-system-prompt", BR.AGENT_NOTE] if br else []
+    # --mcp-config takes several values: the flags after it end the list before the prompt
+    cmd = [paths.claude_bin(), "--bg", *extra, "--name", todo.get("title") or "agent", todo["prompt"]]
     r = subprocess.run(cmd, cwd=cwd, env=account_env(acc), capture_output=True, text=True, timeout=90)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]{8})", r.stdout + r.stderr)
     if not m:
+        BR.discard(br)
         lines = (r.stdout + r.stderr).strip().splitlines()
         return None, lines[-1] if lines else "launch failed"
     jid = m.group(1)
+    if br:
+        BR.adopt(jid, br)
     for _ in range(20):
         if (jobs() / jid / "state.json").exists():
             try:

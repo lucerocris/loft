@@ -25,7 +25,8 @@ access" switch turns it on and the choice is remembered in
 --dev-loopback-devices (OFF by default) also accepts device tokens on
 127.0.0.1, so an Android emulator can reach the server through 10.0.2.2.
 """
-import base64, re, fcntl, ipaddress, pty, select, signal, socket, struct, termios, hashlib, importlib.machinery, importlib.util, json, os, secrets, subprocess, sys, threading, time
+import base64, re, fcntl, ipaddress, pty, select, signal, socket, struct, termios, hashlib, importlib.machinery, importlib.util, json, os, secrets, shutil, subprocess, sys, threading, time
+from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
@@ -41,6 +42,9 @@ PORT = int(_arg("--port", 7717))
 PHONE_PORT = int(_arg("--phone-port", PORT or 7717))
 DEV_LOOPBACK_DEVICES = "--dev-loopback-devices" in sys.argv
 TOKEN = ""  # set below: kept in the config dir so open windows survive a restart
+# Never served. Kept in a 0600 file so the desktop app can challenge the server on the port
+# (sha256(PROOF_KEY:nonce)) and know it is this user's live Loft, not a replay of TOKEN.
+PROOF_KEY = secrets.token_hex(32)
 CLAUDE = str(HOME / ".local/bin/claude")
 VERSION = "2.1"
 HOSTNAME = socket.gethostname().split(".")[0]
@@ -49,7 +53,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, board as B, core as C, paths, projects as P, prompts as PR, transcript as TR, usage as U, webapi  # noqa: E402
+from loft import accounts as A, board as B, browser as BR, core as C, paths, projects as P, prompts as PR, transcript as TR, usage as U, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -625,6 +629,8 @@ def snapshot():
     cards = B.load_cards(show_all_done=True)
     for c in cards:
         c["updated"] = c["updated"].isoformat() if c["updated"] else None
+        if c["kind"] == "agent":
+            c["browser"] = browser_badge(c["id"])
         c["cwd"] = c["cwd"].replace(str(HOME), "~")
         c["folder"] = c["cwd"]
     try:
@@ -736,7 +742,8 @@ def switch_route(card, body):
 
 
 def pending_loop(every=3.0):
-    """Apply queued account switches once their agent leaves Working."""
+    """Apply queued account switches once their agent leaves Working, then send queued
+    prompts and start queued todos that can go now."""
     while True:
         time.sleep(every)
         try:
@@ -744,6 +751,81 @@ def pending_loop(every=3.0):
                 B.apply_pending(log=lambda m: print(m, flush=True))
         except Exception as e:
             print(f"pending switch loop: {type(e).__name__}: {e}", flush=True)
+        try:
+            run_queue()
+        except Exception as e:
+            print(f"prompt queue loop: {type(e).__name__}: {e}", flush=True)
+        try:
+            check_gate()
+        except Exception as e:
+            print(f"browser checks: {type(e).__name__}: {e}", flush=True)
+
+
+def run_queue():
+    with LOCK:
+        due = B.queue_due()
+    for kind, x, item in due:    # sending takes seconds: outside the lock so the app stays responsive
+        try:
+            if kind == "send":
+                send_to_agent(x, item["text"])
+                print(f"queue: sent to {x['id']}", flush=True)
+            else:
+                jid, msg = B.launch_todo(x)
+                if not jid:
+                    raise RuntimeError(msg)
+                print(f"queue: started todo {x['id']} as {jid}", flush=True)
+        except Exception as e:
+            print(f"queue: {kind} {x['id']} failed: {e}", flush=True)
+            with LOCK:
+                B.queue_failed(kind, x, item, str(e))
+    Awake.hold(B.queue_pending())
+
+
+class Awake:
+    """Keeps the machine from idle-sleeping while prompts wait, so they go out at the
+    reset. macOS: caffeinate (-s holds only on AC power; tied to this server's pid).
+    Linux: systemd-inhibit, also ended when this server exits. A closed lid on battery
+    still sleeps; what is due then goes out on the next wake."""
+    proc = None
+
+    @classmethod
+    def hold(cls, on):
+        alive = cls.proc is not None and cls.proc.poll() is None
+        if on == alive:
+            return
+        if not on:
+            cls.proc.terminate(); cls.proc = None
+            return
+        pid = str(os.getpid())
+        if sys.platform == "darwin":
+            cmd = ["caffeinate", "-i", "-s", "-w", pid]
+        elif shutil.which("systemd-inhibit"):
+            cmd = ["systemd-inhibit", "--what=idle:sleep", "--who=Loft", "--why=Prompts are queued",
+                   "tail", f"--pid={pid}", "-f", "/dev/null"]
+        else:
+            return
+        try:
+            cls.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            cls.proc = None
+
+
+def at_time(iso):
+    """'3:40 PM' today, 'Fri 3:40 PM' otherwise (local time)."""
+    t = datetime.fromisoformat(iso).astimezone()
+    hm = t.strftime("%I:%M %p").lstrip("0")
+    return hm if t.date() == datetime.now().astimezone().date() else t.strftime("%a ") + hm
+
+
+def queued_msg(until, n=1):
+    """until: B.limit_until's answer (None = not limited, so it waits for the turn)."""
+    if until is None:
+        when = "sends after this turn"
+    elif until:
+        when = f"sends when the limit resets at {at_time(until)}"
+    else:
+        when = "sends when the limit resets"
+    return f"Queued ({n} waiting): {when}" if n > 1 else f"Queued: {when}"
 
 
 def act(cid, action, body):
@@ -792,6 +874,15 @@ def act(cid, action, body):
             todo["prompt"] = body["prompt"].strip()
         if not todo.get("prompt"):
             return 400, "Write a prompt to start it with."
+        until = B.limit_until(B.todo_account(todo, A.load())["id"])
+        if until is not None:      # at its limit: the poll loop starts it after the reset
+            todos = B.load_todos()
+            for t in todos:
+                if t["id"] == cid:
+                    t.update(prompt=todo["prompt"], queued=True)
+            B.save_todos(todos)
+            Awake.hold(True)
+            return 200, f"Starts when the limit resets{' at ' + at_time(until) if until else ''}"
         jid, msg = B.launch_todo(todo)
         if not jid:
             return 500, msg
@@ -833,7 +924,22 @@ def act(cid, action, body):
             return 400, "Write or say a reply first."
         if card["kind"] == "todo":
             return 400, "Start it first."
+        until = B.limit_until(card.get("account"))
+        if body.get("queue") or until is not None or B.busy(card) or B.queue_read(card["id"])["items"]:
+            n = B.queue_add(card["id"], text)   # behind anything already waiting, to keep the order
+            Awake.hold(True)
+            return 200, queued_msg(until, n)
         return 200, send_to_agent(card, text)
+    if action == "queue":   # {item: id} removes one queued prompt, {} clears them; a todo is unscheduled
+        if card["kind"] == "todo":
+            todos = B.load_todos()
+            for t in todos:
+                if t["id"] == cid:
+                    t["queued"] = False
+            B.save_todos(todos)
+            return 200, "Won't start by itself"
+        gone = B.queue_remove(cid, body.get("item"))
+        return 200, ("Removed" if body.get("item") else "Queue cleared") if gone else "Nothing to remove"
     if action == "prompt" and card["kind"] == "todo":
         todos = B.load_todos()
         for t in todos:
@@ -842,6 +948,143 @@ def act(cid, action, body):
         B.save_todos(todos)
         return 200, "Prompt saved"
     return 400, f"Unknown action {action}"
+
+
+# ------------------------------------------------------------------ shared agent browser
+# One headless Chromium per agent (loft/browser.py). The card streams it, records click flows
+# as per-project checks, and replays them when the agent finishes a turn.
+_LAST_COL, _GATING = {}, set()
+GATE_TRIES = 3   # failed runs sent back to the agent before Loft stops and leaves it to you
+
+
+def browser_badge(jid):
+    rec, res = BR.record(jid), BR.results(jid)
+    if not rec and not res:
+        return None
+    out = {"mcp": bool(rec and rec.get("mcp")), "running": jid in _GATING}
+    if res:
+        out["checks"] = {k: res.get(k) for k in ("ok", "passed", "total", "attempts", "skipped", "at")}
+    return out
+
+
+def browser_info(card):
+    scope = BR.scope_of(card)
+    lg = BR.login_for(scope)
+    return {"ports": BR.dev_ports(card["cwd"]), "scope": scope, "checks": BR.checks_for(scope),
+            "results": BR.results(card["id"]), "running": card["id"] in _GATING,
+            "login": {"host": lg["host"], "saved": lg["saved"]} if lg else None, "badge": browser_badge(card["id"])}
+
+
+def gate(card, base=None, reply=True):
+    """Replay the project's checks against the agent's dev server; tell the agent what failed."""
+    try:
+        if not base:
+            ports = BR.dev_ports(card["cwd"])
+            if not ports:
+                res = {"at": time.time(), "ok": None, "skipped": "No dev server running in the agent's folder",
+                       "attempts": (BR.results(card["id"]) or {}).get("attempts", 0)}
+                (BR.home() / f"{card['id']}-checks.json").write_text(json.dumps(res))
+                return res
+            base = f"http://localhost:{ports[0]}"
+        res = BR.run_all(card["id"], card, base)
+        if reply and not res["ok"] and res["attempts"] <= GATE_TRIES:
+            msg = BR.failure_message(res)
+            try:
+                send_to_agent(card, msg)
+            except Exception as e:   # couldn't reach it now: the prompt queue retries when it's free
+                print(f"checks {card['id']}: couldn't tell the agent ({e}); queued", flush=True)
+                with LOCK:
+                    B.queue_add(card["id"], msg)
+        return res
+    finally:
+        _GATING.discard(card["id"])
+
+
+def check_gate():
+    """An agent left Working and its project has checks: run them (in the background)."""
+    allc = BR.checks_all()
+    for c in B.load_cards(show_all_done=True):
+        if c["kind"] != "agent":
+            continue
+        prev, _LAST_COL[c["id"]] = _LAST_COL.get(c["id"]), c["col"]
+        if prev == "running" and c["col"] in ("needs", "done") and allc.get(BR.scope_of(c)) and c["id"] not in _GATING:
+            _GATING.add(c["id"])
+            threading.Thread(target=lambda c=c: _log_gate(c), daemon=True).start()
+
+
+def _log_gate(card):
+    try:
+        res = gate(card)
+        summary = res.get("skipped") or f"{res['passed']}/{res['total']} passed"
+        print(f"checks {card['id']}: {summary}", flush=True)
+    except Exception as e:
+        print(f"checks {card['id']} failed to run: {type(e).__name__}: {e}", flush=True)
+
+
+def browser_route(jid, action, body):
+    card = find_card(jid)
+    if not card or card["kind"] != "agent":
+        return 404, {"message": "No such agent."}
+    scope = BR.scope_of(card)
+    if action == "run":
+        if jid in _GATING:
+            return 409, {"message": "Checks are already running."}
+        if not BR.checks_for(scope):
+            return 400, {"message": "No checks yet. Record one first."}
+        _GATING.add(jid)
+        res = gate(card, base=(body.get("base") or "").strip() or None, reply=False)
+        return 200, {"message": res.get("skipped") or f"{res['passed']}/{res['total']} checks passed", "results": res}
+    if action == "check-approve":   # an agent recorded it: now every agent on the project must pass it
+        BR.approve_check(scope, body.get("id"))
+        return 200, {"message": "Check approved for the project"}
+    if action == "check-delete":
+        BR.checks_save(scope, [c for c in BR.checks_for(scope) if c["id"] != body.get("id")])
+        return 200, {"message": "Check deleted"}
+    if action == "login-forget":
+        BR.login_drop(scope)
+        return 200, {"message": "Saved login forgotten"}
+    if action == "takeover":
+        text = ("I'm taking over the shared browser for a moment. Don't use the browser tools until I hand it back."
+                if body.get("on") else "I handed the shared browser back. Carry on from the page it's on now.")
+        def tell():
+            try:
+                send_to_agent(card, text)
+            except Exception as e:
+                print(f"takeover {jid}: couldn't tell the agent: {e}", flush=True)
+        threading.Thread(target=tell, daemon=True).start()
+        return 200, {"message": "Told the agent you're driving" if body.get("on") else "Handed back to the agent"}
+    return 400, {"message": f"Unknown action {action}"}
+
+
+def agent_route(card, action, body):
+    jid, scope = card["id"], BR.scope_of(card)
+    if action == "checks":
+        return 200, {"checks": BR.checks_for(scope), "last": BR.results(jid)}
+    if body is None:
+        return 405, {"message": "POST this."}
+    if action == "record":
+        if body.get("on"):
+            BR.rec_start(jid, BR.ensure(jid)["port"])
+            return 200, {"message": "Recording. Walk the flow with the browser tools, add loft_record_expect "
+                                    "for text that must show, then loft_record_save with a name."}
+        steps = BR.rec_stop(jid)
+        if steps is None:
+            return 409, {"message": "Not recording."}
+        if not (body.get("name") or "").strip():
+            return 200, {"message": f"Discarded {len(steps)} steps."}
+        return 200, {"message": BR.save_check(scope, body["name"], steps, by=jid), "steps": steps}
+    if action == "expect":
+        BR.rec_expect(jid, body.get("text"), (body.get("selector") or "").strip() or None)
+        return 200, {"message": "Added", "steps": BR.recording(jid)}
+    if action == "run":
+        if jid in _GATING:
+            return 409, {"message": "Checks are already running."}
+        if not BR.checks_for(scope):
+            return 400, {"message": "This project has no checks yet."}
+        _GATING.add(jid)
+        res = gate(card, base=(body.get("base") or "").strip() or None, reply=False)
+        return 200, res
+    return 404, {"message": f"Unknown tool action {action}"}
 
 
 class H(BaseHTTPRequestHandler):
@@ -867,7 +1110,7 @@ class H(BaseHTTPRequestHandler):
         if not tok:  # EventSource can't send headers; it passes ?t= (GET /api/events only)
             from urllib.parse import parse_qs
             u = urlparse(self.path)
-            if u.path == "/api/events" or u.path.startswith("/ws/term/"):
+            if u.path == "/api/events" or u.path.startswith(("/ws/term/", "/ws/browser/")):
                 tok = (parse_qs(u.query).get("t") or [""])[0]
         return secrets.compare_digest(tok, TOKEN)
 
@@ -931,6 +1174,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, html.encode(), "text/html; charset=utf-8")
         if path == "/favicon.ico":
             self.send_response(204); self.end_headers(); return
+        if path == "/api/loft-proof":
+            from urllib.parse import parse_qs
+            n = (parse_qs(urlparse(self.path).query).get("n") or [""])[0]
+            if len(n) != 32 or any(c not in "0123456789abcdef" for c in n):
+                return self._send(400, {"error": "bad nonce"})
+            return self._send(200, hashlib.sha256(f"{PROOF_KEY}:{n}".encode()).hexdigest().encode(), "text/plain")
         if path.startswith("/static/"):
             f = (HERE / path.lstrip("/")).resolve()
             if HERE in f.parents and f.is_file():
@@ -938,6 +1187,8 @@ class H(BaseHTTPRequestHandler):
                          "woff2": "font/woff2"}.get(f.suffix.lstrip("."), "application/octet-stream")
                 return self._send(200, f.read_bytes(), ctype)
             return self._send(404, {"error": "not found"})
+        if path.startswith("/api/agent/"):
+            return self.agent_api(path, None)
         if not self._authed():
             return self._send(403, {"error": "bad token"})
         if path in ("/api/phone", "/api/devices"):
@@ -960,6 +1211,13 @@ class H(BaseHTTPRequestHandler):
             return webapi.handle_get(self, path)
         if path.startswith("/ws/term/"):
             return self.term_ws(path.rsplit("/", 1)[-1])
+        if path.startswith(("/ws/browser/", "/api/browser/")):   # desktop only: shows local files and drives a browser
+            if not self._admin():
+                return self._send(404, {"error": "not found"})
+            if path.startswith("/ws/"):
+                return self.browser_ws(path.rsplit("/", 1)[-1])
+            card = find_card(path.rsplit("/", 1)[-1])
+            return self._send(200, browser_info(card)) if card else self._send(404, {"error": "no such agent"})
         return self._send(404, {"error": "not found"})
 
     def events(self):
@@ -1105,6 +1363,119 @@ class H(BaseHTTPRequestHandler):
                 except OSError:
                     pass
 
+    # ------------------------------------------------------------ shared browser
+    # Binary frames out = JPEG screencast. Text frames out = {"type": hello|url|err|steps|toast|saved}.
+    # Text frames in = {"type": mouse|key|nav|back|reload|viewport|rec|comment|login-save|login-use, ...};
+    # mouse x/y are 0..1 of the picture.
+    def browser_ws(self, jid):
+        card = find_card(jid)
+        if not self.headers.get("Sec-WebSocket-Key") or not card or card["kind"] != "agent":
+            return self._send(404, {"error": "no such agent"})
+        self._ws_accept()
+        lock = threading.Lock()
+
+        def frame(b):
+            try:
+                self._ws_send(2, b, lock)
+            except OSError:
+                pass
+
+        def ev(d):
+            try:
+                self._ws_send(1, json.dumps(d).encode(), lock)
+            except OSError:
+                pass
+
+        scope = BR.scope_of(card)
+        try:
+            rec = BR.ensure(jid)
+            v = BR.Viewer(rec["port"], frame, ev, scope, jid)
+        except Exception as e:
+            ev({"type": "toast", "err": True, "text": f"Couldn't open the browser: {e}"})
+            try:
+                self._ws_send(8, b"", lock)
+            except OSError:
+                pass
+            return
+        BR.subscribe(jid, ev)   # recording steps, whoever is recording (you or the agent)
+        ev({"type": "hello", "mcp": bool(rec.get("mcp")), "ports": BR.dev_ports(card["cwd"]),
+            "login": bool(BR.login_for(scope)), "recording": BR.recording(jid)})
+        try:
+            while True:
+                op, data = self._ws_read()
+                if op is None or op == 8:
+                    break
+                if op == 9:
+                    self._ws_send(10, data, lock); continue
+                if op != 1:
+                    continue
+                try:
+                    msg = json.loads(data)
+                    t = msg.get("type")
+                    if t == "mouse":
+                        v.mouse(msg)
+                    elif t == "key":
+                        v.key(msg)
+                    elif t == "nav":
+                        v.navigate(msg.get("url") or "")
+                    elif t == "back":
+                        v.back()
+                    elif t == "reload":
+                        v.reload()
+                    elif t == "viewport":
+                        v.viewport(msg.get("mobile"))
+                    elif t == "rec":
+                        if msg.get("on"):
+                            try:
+                                v.record()
+                            except Exception:
+                                ev({"type": "recoff"}); raise
+                        else:
+                            steps = BR.rec_stop(jid) or []
+                            if (msg.get("name") or "").strip():
+                                ev({"type": "toast", "text": BR.save_check(scope, msg["name"], steps)}); ev({"type": "saved"})
+                    elif t == "comment":   # delivering takes seconds: don't hold up the mouse and keys
+                        def deliver(msg=msg):
+                            try:
+                                ev({"type": "toast", "text": self._browser_comment(card, v, msg)})
+                            except Exception as e:
+                                ev({"type": "toast", "err": True, "text": f"Comment not sent: {e}"})
+                        threading.Thread(target=deliver, daemon=True).start()
+                    elif t == "login-save":
+                        ev({"type": "toast", "text": v.save_login()}); ev({"type": "login", "saved": True})
+                    elif t == "login-use":
+                        ev({"type": "toast", "text": v.use_login()})
+                except (OSError, ConnectionError):
+                    raise
+                except Exception as e:
+                    ev({"type": "toast", "err": True, "text": str(e)})
+        except (OSError, ConnectionError):
+            pass
+        finally:
+            BR.unsubscribe(jid, ev)
+            v.close()
+
+    @staticmethod
+    def _browser_comment(card, v, msg):
+        note = (msg.get("note") or "").strip()
+        if not note:
+            raise ValueError("Write what's wrong first.")
+        x, y = msg["x"] * v.meta["deviceWidth"], msg["y"] * v.meta["deviceHeight"]
+        el = v.pick(x, y, {})
+        if not el:
+            raise ValueError("Nothing there to comment on.")
+        r, pad = el["rect"], 16
+        shot = BR.screenshot(v.cdp, v.session, BR.home() / f"shots-{card['id']}" / f"comment-{int(time.time())}.png",
+                             {"x": max(0, r["x"] - pad), "y": max(0, r["y"] - pad),
+                              "width": max(1, r["w"] + 2 * pad), "height": max(1, r["h"] + 2 * pad)})
+        text = (f"Feedback on {v.url()} in the shared browser, about {el['desc']} (selector `{el['css']}`"
+                f"{', text “' + el['text'] + '”' if el.get('text') else ''}): {note}\nScreenshot: {shot}")
+        with LOCK:
+            code, m = act(card["id"], "reply", {"text": text})
+        if code != 200:
+            raise ValueError(m)
+        return m
+
     # ------------------------------------------------------------ live voice
     # The phone streams PCM16LE 16 kHz mono as binary frames while the user talks.
     # Every ~0.8 s (when there is new audio and the worker is free) the server
@@ -1223,7 +1594,25 @@ class H(BaseHTTPRequestHandler):
             return self._send(code, payload)
         return self._send(404, {"error": "not found"})
 
+    def agent_api(self, path, body):
+        """Loft's tools for an agent (loft/agent_mcp.py). The token names the agent; only its own browser."""
+        jid = BR.jid_for_token(self.headers.get("X-Loft-Agent", ""))
+        card = jid and find_card(jid)
+        if not card or self.device is not None:
+            return self._send(403, {"message": "Not a Loft agent token."})
+        try:
+            code, payload = agent_route(card, path.rsplit("/", 1)[-1], body)
+        except Exception as e:
+            code, payload = 400, {"message": str(e)}
+        return self._send(code, payload)
+
     def do_POST(self):
+        if urlparse(self.path).path.startswith("/api/agent/"):
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            except Exception:
+                body = {}
+            return self.agent_api(urlparse(self.path).path, body)
         if not self._authed():
             return self._send(403, {"error": "bad token"})
         parts = urlparse(self.path).path.strip("/").split("/")  # api/cards/<id>/<action> | api/cards
@@ -1251,6 +1640,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         if parts[:2] == ["api", "projects"] or parts == ["api", "view"]:
             code, payload = projects_route("POST", parts, body)
+            return self._send(code, payload)
+        if parts[:2] == ["api", "browser"] and len(parts) == 4:
+            if not self._admin():
+                return self._send(404, {"error": "not found"})
+            try:
+                code, payload = browser_route(parts[2], parts[3], body)
+            except Exception as e:
+                code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
             return self._send(code, payload)
         if parts[:2] != ["api", "cards"]:
             return self._send(404, {"error": "not found"})
@@ -1326,9 +1723,27 @@ def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     srv.daemon_threads = True
     # --port 0 picks a free port; this line is the handshake the desktop app reads.
-    print(f"loft on http://127.0.0.1:{srv.server_address[1]}", flush=True)
+    port = srv.server_address[1]
+    # PROOF_KEY in a private (0600) file: the desktop app challenges the server with it before
+    # trusting the port with the microphone. A file left by a crash is harmless: the key dies
+    # with the process and was never sent over the wire.
+    kf = paths.cache_dir() / f"server-{port}.key"
+    def drop_key():
+        try: kf.unlink(missing_ok=True)
+        except OSError: pass
+    try:
+        kf.parent.mkdir(parents=True, exist_ok=True)
+        drop_key()
+        with os.fdopen(os.open(kf, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as fh:
+            fh.write(PROOF_KEY)
+        import atexit; atexit.register(drop_key)
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    except OSError as e:
+        print(f"couldn't write the key file: {e}", file=sys.stderr, flush=True)
+    os.environ["LOFT_PORT"] = str(port)   # agents started from here reach Loft's tools on this port
+    print(f"loft on http://127.0.0.1:{port}", flush=True)
     if "--exit-with-stdin" in sys.argv:   # desktop app: exit when the parent goes away
-        threading.Thread(target=lambda: (sys.stdin.read(), os._exit(0)), daemon=True).start()
+        threading.Thread(target=lambda: (sys.stdin.read(), drop_key(), os._exit(0)), daemon=True).start()
     if DEV_LOOPBACK_DEVICES:
         print("DEV: device tokens are accepted on 127.0.0.1 too (--dev-loopback-devices)", flush=True)
     on = load_config().get("phone", False)

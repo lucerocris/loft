@@ -8,7 +8,7 @@
 
 mod server;
 
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -62,11 +62,28 @@ struct UiState {
     loaded_once: Mutex<bool>,
 }
 
-fn is_local(url: &Url) -> bool {
-    match url.scheme() {
-        "tauri" | "about" | "data" | "blob" => true,
-        "http" | "https" | "ws" => matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "tauri.localhost")),
-        _ => false,
+/// Loft's own server origin, set once the backend is found or started.
+static LOFT: OnceLock<Url> = OnceLock::new();
+
+/// The app's own pages (the splash shown before the server is up).
+fn is_app(url: &Url) -> bool {
+    matches!(url.scheme(), "tauri" | "about" | "data" | "blob")
+        || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"))
+}
+
+/// Exactly Loft's server: same scheme, host and port. Only this page gets the microphone.
+fn is_loft(url: &Url) -> bool {
+    LOFT.get().is_some_and(|l| {
+        url.scheme() == l.scheme()
+            && url.host_str() == l.host_str()
+            && url.port_or_known_default() == l.port_or_known_default()
+    })
+}
+
+/// Hand a link to the system only for web and mail links; never file:, custom app schemes, smb:, ...
+fn open_external(app: &AppHandle, url: &Url) {
+    if matches!(url.scheme(), "http" | "https" | "mailto") {
+        let _ = app.opener().open_url(url.as_str(), None::<&str>);
     }
 }
 
@@ -165,7 +182,7 @@ fn main() {
         .manage(server::Backend::default())
         .on_permission_request(|webview, kind| {
             // microphone (voice) and notifications, only for the local Loft page
-            let local = webview.url().map(|u| is_local(&u) && u.scheme() == "http").unwrap_or(false);
+            let local = webview.url().map(|u| is_loft(&u)).unwrap_or(false);
             match kind {
                 PermissionKind::Microphone | PermissionKind::Notifications if local => PermissionResponse::Allow,
                 _ => PermissionResponse::Deny,
@@ -184,15 +201,15 @@ fn main() {
                 .background_color(tauri::window::Color(15, 16, 18, 255))
                 .initialization_script(INIT_JS)
                 .on_navigation(move |url| {
-                    if is_local(url) {
+                    if is_app(url) || is_loft(url) {
                         return true;
                     }
-                    let _ = nav_handle.opener().open_url(url.as_str(), None::<&str>);
+                    open_external(&nav_handle, url);
                     false
                 })
                 .on_new_window(move |url, _features| {
-                    if !is_local(&url) || url.scheme() == "http" {
-                        let _ = popup_handle.opener().open_url(url.as_str(), None::<&str>);
+                    if !is_app(&url) {
+                        open_external(&popup_handle, &url);
                     }
                     NewWindowResponse::Deny
                 })
@@ -234,6 +251,7 @@ fn main() {
                 let backend = handle.state::<server::Backend>();
                 match backend.connect(&handle) {
                     Ok(url) => {
+                        let _ = LOFT.set(url.clone());
                         let _ = w.navigate(url);
                     }
                     Err(e) => splash_error(&w, &e),
