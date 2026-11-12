@@ -1097,7 +1097,7 @@ function brSide() {
   const I = BR.info; if (!I) { el.innerHTML = ""; return; }
   const res = I.results, byId = Object.fromEntries((res?.results || []).map(r => [r.id, r]));
   const checks = I.checks.map(k => { const r = byId[k.id];
-    return `<div class="row"><span class="${r ? (r.ok ? "ok" : "bad") : "st-muted"}">${r ? (r.ok ? "✓" : "✗") : "○"}</span><span class="grow">${esc(k.name)} <span class="st-muted">· ${k.steps.length} steps</span></span><button class="ibtn" data-ckdel="${k.id}" title="Delete check" aria-label="Delete check"><i data-lucide="trash-2" class="ic"></i></button></div>
+    return `<div class="row"><span class="${r ? (r.ok ? "ok" : "bad") : "st-muted"}">${r ? (r.ok ? "✓" : "✗") : "○"}</span><span class="grow">${esc(k.name)} <span class="st-muted">· ${k.steps.length} steps${k.pending ? " · recorded by an agent, waiting for you" : ""}</span></span>${k.pending ? `<button class="btn secondary" data-ckok="${k.id}" title="Every agent on this project must pass it from now on">Approve</button>` : ""}<button class="ibtn" data-ckdel="${k.id}" title="Delete check" aria-label="Delete check"><i data-lucide="trash-2" class="ic"></i></button></div>
       ${r && !r.ok ? `<div class="mono bad">step ${r.step}: ${esc(r.error)}${r.shot ? `<br>${esc(r.shot)}` : ""}</div>` : ""}`; }).join("");
   el.innerHTML = `<div class="row"><span class="label">Checks for this project</span><span class="grow hint" style="margin:0">${I.checks.length ? (I.running ? "running…" : res?.skipped ? esc(res.skipped) : res?.at ? `last run ${((a) => a === "now" ? "just now" : a + " ago")(ago(new Date(res.at * 1000).toISOString()))} on ${esc(res.base || "")}` : "they run each time the agent finishes a turn") : "none yet: Record a flow and every agent on this project has to pass it"}</span>
       ${I.checks.length ? `<button class="btn secondary" data-bb="run" ${I.running ? "disabled" : ""}><i data-lucide="play" class="ic"></i>Run now</button>` : ""}</div>
@@ -1141,6 +1141,7 @@ function brNote(e, p) {
 async function brClick(t) {
   const a = t.dataset.bb, id = BR.id;
   if (t.dataset.bport) return bsend({ type: "nav", url: `localhost:${t.dataset.bport}` });
+  if (t.dataset.ckok) { try { toast((await api(`/api/browser/${id}/check-approve`, { id: t.dataset.ckok })).message); } catch (e) { toast(e.message, true); } return brInfo(); }
   if (t.dataset.ckdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.title = "Click again to delete"; return; } try { toast((await api(`/api/browser/${id}/check-delete`, { id: t.dataset.ckdel })).message); } catch (e) { toast(e.message, true); } return brInfo(); }
   if (!a) return;
   if (a === "back" || a === "reload") return bsend({ type: a });

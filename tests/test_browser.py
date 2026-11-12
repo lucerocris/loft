@@ -27,6 +27,12 @@ class Parse(unittest.TestCase):
         self.assertEqual(BR.parse_lsof("p12\nn*:3000\nn127.0.0.1:5173\np40\nn/Users/x/app\n"),
                          {12: ["*:3000", "127.0.0.1:5173"], 40: ["/Users/x/app"]})
 
+    def test_safe_path(self):
+        for ok in ("/", "/a?b=1#c", "/me.html"):
+            self.assertTrue(BR.safe_path(ok), ok)
+        for bad in ("//evil.com/x", "http://evil.com", "evil", "/\\evil.com", "/@evil.com", None):
+            self.assertFalse(BR.safe_path(bad), bad)
+
     def test_rehost_local_only(self):
         c = [{"name": "a", "domain": "localhost"}, {"name": "b", "domain": ".example.com"}]
         self.assertEqual(BR._rehost(c, "localhost", "127.0.0.1")[0]["domain"], "127.0.0.1")
@@ -114,6 +120,9 @@ class Live(unittest.TestCase):
         self.assertTrue(self.wait(lambda: "Hello Sam" in BR.page_eval(v.cdp, v.session, "document.body.innerText")))
         v.mouse({**self.at(v, "#out"), "kind": "mousePressed", "expect": True})
         self.assertTrue(self.wait(lambda: len(BR.recording("j1") or []) >= 5))
+        self.assertEqual(BR.page_eval(v.cdp, v.session, "typeof window.__loftRec"), "undefined")   # page can't fake steps
+        BR.page_eval(v.cdp, v.session, "document.querySelector('[data-testid=go]').click()")      # untrusted: ignored
+        time.sleep(0.3)
         steps = BR.rec_stop("j1")
         self.assertEqual([s["action"] for s in steps], ["goto", "click", "fill", "click", "expect"])
         self.assertEqual(steps[0]["path"], "/")
@@ -127,6 +136,8 @@ class Live(unittest.TestCase):
         bad = steps[:4] + [{**steps[4], "text": "Hello Bob"}]
         r = BR.run_check(port, self.base, bad, self.tmp / "s2.png")
         self.assertFalse(r["ok"]); self.assertEqual(r["step"], 5)
+        r = BR.run_check(port, self.base, [{"action": "goto", "path": "//example.com/"}], self.tmp / "s7.png")
+        self.assertFalse(r["ok"]); self.assertIn("refused", r["error"])
         self.assertTrue(Path(r["shot"]).stat().st_size > 1000)
 
     def test_agent_drives_and_is_recorded(self):
@@ -229,7 +240,10 @@ class Live(unittest.TestCase):
         err, out = tool("loft_record_save", name="Has a Go button")
         self.assertFalse(err, out)
         self.assertEqual([s["action"] for s in out["steps"]], ["goto", "expect"])
-        self.assertIn("Has a Go button", [c["name"] for c in tool("loft_list_checks")[1]["checks"]])
+        self.assertIn("approves", out["message"])
+        saved = tool("loft_list_checks")[1]["checks"][0]
+        self.assertEqual((saved["name"], saved["pending"], saved["by"]), ("Has a Go button", True, jid))
+        self.assertEqual(os.stat(BR._checks_file()).st_mode & 0o777, 0o600)
         err, res = tool("loft_run_checks", base_url=self.base)
         self.assertFalse(err, res); self.assertTrue(res["ok"])
 

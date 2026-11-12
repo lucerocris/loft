@@ -854,6 +854,9 @@ def browser_route(jid, action, body):
         _GATING.add(jid)
         res = gate(card, base=(body.get("base") or "").strip() or None, reply=False)
         return 200, {"message": res.get("skipped") or f"{res['passed']}/{res['total']} checks passed", "results": res}
+    if action == "check-approve":   # an agent recorded it: now every agent on the project must pass it
+        BR.approve_check(scope, body.get("id"))
+        return 200, {"message": "Check approved for the project"}
     if action == "check-delete":
         BR.checks_save(scope, [c for c in BR.checks_for(scope) if c["id"] != body.get("id")])
         return 200, {"message": "Check deleted"}
@@ -889,7 +892,7 @@ def agent_route(card, action, body):
             return 409, {"message": "Not recording."}
         if not (body.get("name") or "").strip():
             return 200, {"message": f"Discarded {len(steps)} steps."}
-        return 200, {"message": BR.save_check(scope, body["name"], steps), "steps": steps}
+        return 200, {"message": BR.save_check(scope, body["name"], steps, by=jid), "steps": steps}
     if action == "expect":
         BR.rec_expect(jid, body.get("text"), (body.get("selector") or "").strip() or None)
         return 200, {"message": "Added", "steps": BR.recording(jid)}
