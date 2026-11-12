@@ -48,7 +48,7 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .btn.quiet { color: var(--t2); } .btn.quiet:hover { background: var(--raised); color: var(--t1); }
 .btn[disabled] { opacity: .4; cursor: not-allowed; }
 .top .btn { margin-left: auto; }
-.list { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.list { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 12px 12px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .sec { display: flex; align-items: center; gap: 6px; padding: 14px 12px 6px; font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--t3); }
 .sec.alert { color: var(--needs); }
 .sec button { margin-left: auto; border: 0; background: none; color: var(--t3); font: inherit; cursor: pointer; padding: 0; }
@@ -272,6 +272,10 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .bcard[draggable="true"] { cursor: grab; }
 .bcard.dragging { opacity: .35; }
 .bcard.starting { opacity: .5; pointer-events: none; }
+.item, .bcard { position: relative; transition: transform .18s ease; }
+.swiping { transition: none !important; clip-path: inset(0 calc(-1 * var(--sw, 0px)) 0 var(--sw, 0px)); }
+.swiping::after { content: attr(data-swl); position: absolute; top: 0; bottom: 0; left: 100%; width: var(--sw, 0); display: flex; align-items: center; justify-content: flex-end; padding-right: 14px; box-sizing: border-box; overflow: hidden; white-space: nowrap; border-radius: var(--r-md); background: var(--raised); color: var(--t3); font-size: 12px; font-weight: 500; }
+.swiping.swipe-go::after { background: var(--failed); color: #fff; }
 .bcard .r1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .bcard .t { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bcard .s { font-size: 12px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -352,13 +356,17 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .fields { display: grid; grid-template-columns: 64px minmax(0, auto); gap: 10px 12px; align-items: center; justify-content: start; }
 .fields > .label { margin: 0; }
 .fields .folder input { width: 380px; }
+.fields .dchips { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; max-width: 560px; }
+.dchips button { border: 1px solid var(--border); background: var(--surface); color: var(--t2); font: 12px var(--mono); padding: 5px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.dchips button:hover { color: var(--t1); border-color: var(--border-strong); }
+.dchips button[aria-pressed="true"] { background: var(--selected); color: var(--t1); border-color: var(--t2); }
 .fields .fhint { grid-column: 2; font-size: 12px; color: var(--t3); max-width: 560px; }
 .pick { position: relative; padding: 0 0 0 12px; width: 280px; }
 .pick select { appearance: none; border: 0; background: none; outline: none; color: var(--t1); height: 36px; flex: 1; padding: 0 28px 0 0; cursor: pointer; }
 .pick select option { background: var(--raised); color: var(--t1); }
 .pick .chev { position: absolute; right: 10px; pointer-events: none; color: var(--t3); width: 14px; height: 14px; }
 .pick .ring { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--t3); flex: none; }
-@media (max-width: 820px) { .fields { grid-template-columns: minmax(0, 1fr); } .fields .fhint { grid-column: 1; } .fields .pick, .fields .folder { width: 100%; } .fields .folder input { width: 100%; min-width: 0; } .fields .seg { flex-wrap: wrap; } }
+@media (max-width: 820px) { .fields { grid-template-columns: minmax(0, 1fr); } .fields .fhint, .fields .dchips { grid-column: 1; } .fields .pick, .fields .folder { width: 100%; } .fields .folder input { width: 100%; min-width: 0; } .fields .seg { flex-wrap: wrap; } }
 /* projects screen */
 .plist { width: min(100%, 680px); display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
 .prow { display: flex; gap: 12px; align-items: flex-start; padding: 14px 14px 14px 16px; }
@@ -518,6 +526,9 @@ const projById = id => (S.projects || []).find(p => p.id === id);
 const projOf = c => projById(c.project) || null;
 const GREY = "#6E737B";
 const repoOf = c => (c.folder || c.cwd || "").replace(/\/\.claude\/worktrees\/.*$/, "");
+// Every folder a project covers: its own, the repos its agents work in, recent ones inside its folders.
+const projDirs = pj => [...new Set([...pj.folders, ...S.cards.filter(c => c.project === pj.id).map(repoOf),
+  ...S.dirs.filter(d => pj.folders.some(f => d.startsWith(f + "/")))].filter(d => d && d !== "~"))];
 const baseName = p => { const b = (p || "").replace(/\/+$/, "").split("/").pop(); return b === "~" || !b ? "home" : b; };
 const keyOf = (c, g) => g === "account" ? (accById(c.account) ? c.account : "") : g === "project" ? (projById(c.project) ? c.project : "") : g === "folder" ? repoOf(c) : "";
 function dimValues(g, cards) {   // [{key, label, hex, title}] in display order
@@ -794,8 +805,9 @@ function newTaskAccounts() {
 function paneNew(p) {
   if (newProj && !projById(newProj)) newProj = null;
   const { pj, allowed, autoOk } = newTaskAccounts(), projs = S.projects || [];
-  const dir = drafts.dir ?? (pj?.folders[0] || store.get("loft.dir." + newAcct) || S.dirs[0] || "");
-  const dirs = [...new Set([...(pj?.folders || []), ...S.dirs])];
+  const pdirs = pj ? projDirs(pj) : [];
+  const dir = drafts.dir ?? (pdirs[0] || store.get("loft.dir." + newAcct) || S.dirs[0] || "");
+  const dirs = [...new Set([...pdirs, ...S.dirs])];
   const best = autoOk ? autoPick(allowed) : null;
   const accSeg = multiAcc() ? `<span class="label">Account</span><div class="seg" role="group" aria-label="Account">${autoOk ? `<button data-newacct="auto" aria-pressed="${newAcct === "auto"}" title="The allowed account with the lowest 5-hour usage">Auto${best ? ` · ${esc(best.label)} has most left` : ""}</button>` : ""}${allowed.map(a => `<button data-newacct="${esc(a.id)}" aria-pressed="${newAcct === a.id}" title="${esc(accTitle(a))}">${dotH(a)}${esc(a.label)}</button>`).join("")}</div>` : "";
   const hint = pj && multiAcc() ? (allowed.length > 1 && pj.accounts.length ? `${esc(pj.name)} runs on ${allowed.map(a => esc(a.label)).join(" and ")}. Auto uses the one with the most 5-hour usage left.` : pj.accounts.length ? `${esc(pj.name)} runs on ${esc(allowed[0]?.label || "")}.` : "") : "";
@@ -804,6 +816,7 @@ function paneNew(p) {
     <div class="fields">${projs.length ? `<span class="label">Project</span><label class="folder pick" title="Project">${pj ? `<span class="dot" style="background:${pj.hex}"></span>` : `<span class="ring"></span>`}<select id="nproj" aria-label="Project"><option value="">No project</option>${projs.map(x => `<option value="${esc(x.id)}"${x.id === newProj ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select><i data-lucide="chevron-down" class="chev"></i></label>` : ""}
       ${accSeg}
       <span class="label">Folder</span><label class="folder" title="Project folder"><i data-lucide="folder" class="ic"></i><input id="ndir" list="dirs" value="${esc(dir)}" spellcheck="false" aria-label="Folder"><datalist id="dirs">${dirs.map(d => `<option value="${esc(d)}">`).join("")}</datalist></label>
+      ${pdirs.length > 1 ? `<div class="dchips" role="group" aria-label="${esc(pj.name)} folders">${pdirs.map(d => `<button data-ndir="${esc(d)}" aria-pressed="${d === dir}" title="${esc(d)}">${esc(d)}</button>`).join("")}</div>` : ""}
       ${hint ? `<span class="fhint">${hint}</span>` : ""}</div>
     <div class="row"><button class="btn primary" id="nStart"><i data-lucide="play" class="ic"></i>Start</button><button class="btn quiet" id="nTodo">Save to Todo</button><span class="hint" style="margin:0">Ctrl+Enter starts · the title is written for you${S.voice ? ` · say "…start it" at the end to start hands-free` : ""}</span></div>
     <div class="err" id="nerr"></div><div class="voice-note" id="vnote" hidden></div></div>`;
@@ -1324,6 +1337,7 @@ document.addEventListener("click", async e => {
   if (t.hasAttribute("data-reconnect")) { wsFor = null; ws = null; return mountTerm(sel); }
   if (t.hasAttribute("data-menu")) return $("#menu").hidden || $("#menu").dataset.for !== "card" ? openMenu(t) : closeMenu();
   if (t.dataset.newacct) { drafts.dir = $("#ndir")?.value; drafts.new = $("#nprompt").value; newAcct = t.dataset.newacct; store.set("loft.newAcct", newAcct); $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.dataset.ndir) { $("#ndir").value = drafts.dir = t.dataset.ndir; document.querySelectorAll("[data-ndir]").forEach(b => b.setAttribute("aria-pressed", b === t)); return; }
   if (t.id === "nStart") return submitNew(true);
   if (t.id === "nTodo") return submitNew(false);
   if (t.hasAttribute("data-start")) { const p = $("#tprompt").value.trim(); if (!p) { toast("Write or say the prompt first.", true); return; } t.disabled = true; const r = await act(sel, "start", { prompt: p }); t.disabled = false; const m = /started ([0-9a-f]{8})/.exec(r?.message || ""); if (m) waitOpen(m[1]); return; }
@@ -1401,6 +1415,28 @@ document.addEventListener("drop", e => {
   if (!dragId) return; const ok = e.target.closest?.('.bcol[data-col="running"]'); e.preventDefault();
   const id = dragId; dragId = null; clearDrop(); if (ok) startTodo(id); else if (boardStale) renderBoard();
 });
+// Two-finger swipe left on an inbox row or board card archives it (a working agent is stopped first).
+let sw = null;
+document.addEventListener("wheel", e => {
+  const el = e.target.closest?.("#list .item[data-id], #cols .bcard[data-id]");
+  if (!sw && (!el || e.deltaX <= 0 || Math.abs(e.deltaX) <= Math.abs(e.deltaY))) return;
+  e.preventDefault();
+  if (!sw) { const c = cardOf(el.dataset.id); if (!c) return; sw = { el, x: 0, id: c.id };
+    el.dataset.swl = c.kind === "todo" ? "Delete" : c.col === "running" ? "Stop & archive" : "Archive"; el.classList.add("swiping"); }
+  const w = sw.el.offsetWidth; sw.x = Math.min(w, Math.max(0, sw.x + e.deltaX));
+  sw.el.style.transform = `translateX(${-sw.x}px)`; sw.el.style.setProperty("--sw", sw.x + "px"); sw.el.classList.toggle("swipe-go", sw.x > w * .4);
+  clearTimeout(sw.t); sw.t = setTimeout(swipeEnd, 140);
+}, { passive: false });
+async function swipeEnd() {
+  const { el, x, id } = sw, go = x > el.offsetWidth * .4; sw = null;
+  el.classList.remove("swiping", "swipe-go"); el.style.transform = ""; el.style.removeProperty("--sw");
+  const c = cardOf(id); if (!go || !c) return;
+  if (c.kind !== "todo" && c.col === "running") await act(id, "stop", {}, true);
+  let r = await act(id, "archive", {}, true);
+  for (let i = 0; c.col === "running" && /stop it first/.test(r?.message || "") && i < 8; i++) { await new Promise(f => setTimeout(f, 1000)); r = await act(id, "archive", {}, true); }
+  if (r) toast(r.message);
+  if (sel === id) setSel(null);
+}
 document.addEventListener("dragend", () => { if (!dragId) return; dragId = null; clearDrop(); if (boardStale) renderBoard(); });
 
 /* ---------- live data ---------- */
