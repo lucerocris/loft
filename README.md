@@ -158,6 +158,37 @@ While anything is queued, Loft keeps the machine from idle-sleeping (`caffeinate
 sleeps; anything due then goes out on the next wake. Queues live in
 `~/.claude/jobs/<id>/loft-queue.json`.
 
+## Shared browser
+
+Every agent card has a **Browser** tab (W): a headless Chromium that Loft streams into the card.
+Click, scroll and type in it as in any browser.
+
+- **Preview**: Loft finds the dev server running in the agent's folder (any port a process
+  inside it listens on) and opens it. The address bar takes a URL or just a port. The phone
+  icon switches to a 390×844 phone viewport. A red count shows console errors, uncaught
+  exceptions and failed requests.
+- **Watch the agent test**: agents started from Loft in a web folder (one with `package.json`
+  or `index.html`) get the same browser through the Playwright MCP (`--cdp-endpoint`), so you
+  watch the agent click through its work live. **Take over** tells the agent you're driving;
+  **Hand back** tells it to carry on. Needs `npx`; `LOFT_BROWSER=0` turns it off.
+- **Comment**: click an element and write a note. The agent gets the note, the element's
+  selector and text, and a cropped screenshot.
+- **Checks**: **Record** reloads the page, then saves your clicks and typing as steps. Use
+  **Check text** and click some text to assert it's there. Checks belong to the project. Each
+  time an agent on that project leaves Working, Loft replays them in a fresh tab against the
+  agent's dev server. Failures go back to the agent with the step, the error and a screenshot,
+  up to 3 runs, then Loft leaves it to you. **Run now** runs them on demand. The result shows
+  on the card (✓ 2/2 checks).
+- **Saved login**: log in once in the browser, then **Login → Save login from this page**.
+  Loft keeps that page's cookies and local/session storage for the project. It puts them into
+  every browser of the project when you open it and before every check run. A login saved on
+  `localhost` also works on `127.0.0.1`, on any port.
+
+Files: browsers and screenshots in `~/.cache/loft/browsers/` (deleted when the agent is
+archived), checks in `~/.config/loft/checks.json`, logins in `~/.config/loft/logins.json`
+(mode 0600: they are session tokens). Uses Chrome, Chromium, Edge or Brave (`LOFT_CHROME`
+overrides). The Browser tab is desktop-only: phones can't reach it.
+
 ## Projects and grouping
 
 Group agents by status, account, project, folder or nothing. A project is a set of folders plus
