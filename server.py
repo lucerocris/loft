@@ -661,6 +661,24 @@ def snapshot():
     }
 
 
+def fs_list(query):
+    """GET /api/fs?path=~/x[&hidden=1] -> (status, payload). See loft/fs.py."""
+    from urllib.parse import parse_qs
+    from loft import fs as FS
+    q = parse_qs(query)
+    path = (q.get("path") or ["~"])[0]
+    try:
+        recent = []
+        if FS.resolve(path) == FS.resolve("~"):   # Recent only on the top-level call
+            try:
+                recent = B.recent_dirs() + [f for p in P.load()["projects"] for f in p["folders"]]
+            except (Exception, SystemExit):   # a broken loft.json shouldn't break browsing
+                recent = B.recent_dirs()
+        return 200, FS.listdir(path, hidden=(q.get("hidden") or [""])[0] in ("1", "true"), recent=recent)
+    except FS.FsError as e:
+        return e.code, {"error": str(e), "message": str(e)}
+
+
 def new_task_account(explicit, proj):
     """explicit account (id or "auto") > the project's default (auto = lowest 5h usage) > global default."""
     return P.pick_account(explicit, proj, A.load(), U.get)
@@ -1200,6 +1218,8 @@ class H(BaseHTTPRequestHandler):
             return self.voice_ws()
         if path == "/api/state":
             return self._send(200, snapshot())
+        if path == "/api/fs":   # folder picker; the paired phone too (folder names only, home only)
+            return self._send(*fs_list(urlparse(self.path).query))
         if path.startswith("/api/timeline/"):
             return self._send(200, timeline(path.rsplit("/", 1)[-1]))
         parts = path.strip("/").split("/")
