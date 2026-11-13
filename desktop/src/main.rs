@@ -169,6 +169,10 @@ fn enable_media(w: &WebviewWindow) {
 }
 
 fn main() {
+    // Wayland app_id = GTK program name. It must match the launcher (Loft.desktop) or KDE/GNOME
+    // show a generic icon in the title bar and task switcher.
+    #[cfg(target_os = "linux")]
+    glib::set_prgname(Some("Loft"));
     let app = tauri::Builder::default()
         // must be first: a second launch just focuses the running window
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| show_main(app)))
