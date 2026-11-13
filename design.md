@@ -11,7 +11,8 @@ Quiet instrument. A dark ops board that stays out of the way until something nee
 ## Site map and flow
 One page, two views: Inbox (list | selected agent) and Board (Todo, Working, Needs you,
 Done). The right pane shows the selected agent, the New task form, or Accounts (gear in the
-account filter row, or `,`). With no `accounts.json` yet, the pane is the first-run setup.
+account filter row, or `,`), or Browser (globe in the header, Shift+W): the account's signed-in
+sites as tabs over the live browser, with the agent browsers listed under it. With no `accounts.json` yet, the pane is the first-run setup.
 
 ## Rhythm
 Dense. Sections divided by hairlines and labels, not surfaces. Cards and the accounts list
