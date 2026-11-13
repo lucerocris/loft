@@ -645,12 +645,13 @@ def launch_todo(todo):
         return None, f"folder missing: {cwd}"
     cfg = A.load()
     acc = todo_account(todo, cfg)
-    try:   # web project: a browser the agent shares with the card (see loft/browser.py)
-        br = BR.prepare(cwd)
+    try:   # web project, or an account with signed-in sites: a browser the agent shares with the card
+        br = BR.prepare(cwd, acc["id"])   # (see loft/browser.py, loft/sites.py)
     except Exception:
         br = None
-    extra = ["--mcp-config", BR.mcp_config(br), "--append-system-prompt", BR.AGENT_NOTE] if br else []
-    # --mcp-config takes several values: the flags after it end the list before the prompt
+    extra = ["--mcp-config", BR.mcp_config(br), "--disallowedTools", BR.DENY_TOOLS,
+             "--append-system-prompt", BR.agent_note(br)] if br else []
+    # --mcp-config and --disallowedTools take several values: the flags after them end each list
     cmd = [paths.claude_bin(), "--bg", *extra, "--name", todo.get("title") or "agent", todo["prompt"]]
     r = subprocess.run(cmd, cwd=cwd, env=account_env(acc), capture_output=True, text=True, timeout=90)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]{8})", r.stdout + r.stderr)

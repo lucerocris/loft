@@ -53,7 +53,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, board as B, browser as BR, core as C, paths, projects as P, prompts as PR, transcript as TR, usage as U, webapi  # noqa: E402
+from loft import accounts as A, board as B, browser as BR, core as C, paths, projects as P, prompts as PR, sites as ST, transcript as TR, usage as U, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -658,6 +658,7 @@ def snapshot():
         "unsorted": counts.get(None, {"total": 0, "needs": 0, "running": 0, "todo": 0, "done": 0}),
         "groupBy": pcfg["view"]["groupBy"],
         "organized": P.config_path().is_file(),
+        "sites": ST.counts(),
     }
 
 
@@ -962,6 +963,13 @@ def browser_badge(jid):
     if not rec and not res:
         return None
     out = {"mcp": bool(rec and rec.get("mcp")), "running": jid in _GATING}
+    if rec and rec.get("port"):   # live = the agent's browser is on a page (not a blank tab)
+        url = BR.page_url(rec["port"])
+        out["url"] = url[:300]
+        out["live"] = url.startswith(("http:", "https:", "file:"))
+    if rec and rec.get("account"):   # signed in to this Loft account's sites (loft/sites.py)
+        out["account"] = rec["account"]
+        out["sites"] = len(rec.get("sites") or [])
     if res:
         out["checks"] = {k: res.get(k) for k in ("ok", "passed", "total", "attempts", "skipped", "at")}
     return out
@@ -1087,6 +1095,61 @@ def agent_route(card, action, body):
     return 404, {"message": f"Unknown tool action {action}"}
 
 
+# ------------------------------------------------------------------ signed-in sites
+# Per Loft account: a list of sites and one signed-in Chrome profile (loft/sites.py). Loft › Browser
+# streams it over /ws/sites/<account>; agents on the account start with a copy of it.
+def sites_list():
+    cfg = A.load()
+    agents = []
+    for c in B.load_cards(show_all_done=True):
+        if c["kind"] != "agent":
+            continue
+        b = browser_badge(c["id"])
+        if b and BR.record(c["id"]):
+            agents.append({"id": c["id"], "name": c["name"], "account": c["account"], "col": c["col"],
+                           "url": b.get("url", ""), "live": b.get("live", False), "sitesAccount": b.get("account")})
+    return {"accounts": [ST.public(a["id"]) for a in cfg["accounts"] if not a.get("pending")], "agents": agents,
+            "chrome": bool(BR.chrome_bin())}
+
+
+def sites_route(method, parts, body, remote=False):
+    """/api/sites[/<account>[/<site id>|/window]]. Returns (status, payload)."""
+    if method == "GET" and len(parts) == 2:
+        return 200, sites_list()
+    if len(parts) < 3:
+        return 404, {"message": "Not found."}
+    acc = parts[2]
+    try:
+        ST.check_account(acc)
+    except ValueError as e:
+        return 404, {"message": str(e)}
+    try:
+        if method == "GET" and len(parts) == 3:
+            return 200, ST.public(acc)
+        if method == "POST" and len(parts) == 3:
+            site = ST.add(acc, body.get("name"), body.get("url"))
+            return 200, {"message": f"Added {site['name']}", "site": site, **ST.public(acc, with_hints=False)}
+        if method == "POST" and parts[3:] == ["window"]:
+            if remote:   # it opens on the desktop: only from the desktop
+                return 404, {"message": "Not found."}
+            if body.get("open"):
+                ST.open_window(acc, (body.get("url") or "").strip() or None)
+                return 200, {"message": "Opened in a window. Sign in there, then close the window."}
+            closed = ST.close_window(acc)
+            return 200, {"message": "Window closed" if closed else "No window open"}
+        if method == "PATCH" and len(parts) == 4:
+            site = ST.update(acc, parts[3], body.get("name"), body.get("url"))
+            return 200, {"message": "Saved", "site": site}
+        if method == "DELETE" and len(parts) == 4:
+            ST.remove(acc, parts[3])
+            return 200, {"message": "Removed"}
+    except LookupError as e:
+        return 404, {"message": str(e)}
+    except (ValueError, RuntimeError) as e:
+        return 400, {"message": str(e)}
+    return 404, {"message": "Not found."}
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "cagents"
 
@@ -1110,7 +1173,7 @@ class H(BaseHTTPRequestHandler):
         if not tok:  # EventSource can't send headers; it passes ?t= (GET /api/events only)
             from urllib.parse import parse_qs
             u = urlparse(self.path)
-            if u.path == "/api/events" or u.path.startswith(("/ws/term/", "/ws/browser/")):
+            if u.path == "/api/events" or u.path.startswith(("/ws/term/", "/ws/browser/", "/ws/sites/")):
                 tok = (parse_qs(u.query).get("t") or [""])[0]
         return secrets.compare_digest(tok, TOKEN)
 
@@ -1211,11 +1274,15 @@ class H(BaseHTTPRequestHandler):
             return webapi.handle_get(self, path)
         if path.startswith("/ws/term/"):
             return self.term_ws(path.rsplit("/", 1)[-1])
-        if path.startswith(("/ws/browser/", "/api/browser/")):   # desktop only: shows local files and drives a browser
+        if path.startswith("/ws/browser/"):   # desktop and paired phones (phones can't open file:// and the like)
+            return self.browser_ws(path.rsplit("/", 1)[-1])
+        if path.startswith("/ws/sites/"):
+            return self.sites_ws(path.rsplit("/", 1)[-1])
+        if path == "/api/sites" or path.startswith("/api/sites/"):
+            return self._send(*sites_route("GET", parts, {}, remote=self.device is not None))
+        if path.startswith("/api/browser/"):   # desktop only: shows local ports and check results
             if not self._admin():
                 return self._send(404, {"error": "not found"})
-            if path.startswith("/ws/"):
-                return self.browser_ws(path.rsplit("/", 1)[-1])
             card = find_card(path.rsplit("/", 1)[-1])
             return self._send(200, browser_info(card)) if card else self._send(404, {"error": "no such agent"})
         return self._send(404, {"error": "not found"})
@@ -1417,7 +1484,7 @@ class H(BaseHTTPRequestHandler):
                     elif t == "key":
                         v.key(msg)
                     elif t == "nav":
-                        v.navigate(msg.get("url") or "")
+                        v.navigate(msg.get("url") or "", remote=self.device is not None)
                     elif t == "back":
                         v.back()
                     elif t == "reload":
@@ -1453,6 +1520,97 @@ class H(BaseHTTPRequestHandler):
             pass
         finally:
             BR.unsubscribe(jid, ev)
+            v.close()
+
+    # Loft › Browser: the account's signed-in browser (loft/sites.py). Same frames and input as browser_ws;
+    # text in also takes {"type": "site", "id"} (open one of the account's sites) and {"type": "sites"}
+    # (fresh list with signed-in hints); text out adds {"type": "hello"|"sites", ...ST.public()} and
+    # {"type": "window"} when the browser is open in a window on the desktop instead.
+    def sites_ws(self, acc):
+        try:
+            ST.check_account(acc)
+        except ValueError:
+            return self._send(404, {"error": "no such account"})
+        if not self.headers.get("Sec-WebSocket-Key"):
+            return self._send(400, {"error": "websocket only"})
+        self._ws_accept()
+        lock, remote = threading.Lock(), self.device is not None
+
+        def frame(b):
+            try:
+                self._ws_send(2, b, lock)
+            except OSError:
+                pass
+
+        def ev(d):
+            try:
+                self._ws_send(1, json.dumps(d).encode(), lock)
+            except OSError:
+                pass
+
+        def bye():
+            try:
+                self._ws_send(8, b"", lock)
+            except OSError:
+                pass
+
+        try:
+            rec = ST.ensure_master(acc)
+            v = BR.Viewer(rec["port"], frame, ev)
+        except Exception as e:
+            info = ST.public(acc, with_hints=False)
+            ev({"type": "hello", **info})
+            ev({"type": "window"} if info["browser"]["window"] else {"type": "toast", "err": True, "text": f"Couldn't open the browser: {e}"})
+            return bye()
+        ev({"type": "hello", **ST.public(acc)})
+
+        def watch():   # the browser went away (closed for a window, or crashed): end the stream so the app shows it
+            while not v.cdp.closed:
+                time.sleep(0.5)
+            bye()
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        threading.Thread(target=watch, daemon=True).start()
+        try:
+            while True:
+                op, data = self._ws_read()
+                if op is None or op == 8:
+                    break
+                if op == 9:
+                    self._ws_send(10, data, lock); continue
+                if op != 1:
+                    continue
+                try:
+                    msg = json.loads(data)
+                    t = msg.get("type")
+                    if t == "mouse":
+                        v.mouse({k: msg[k] for k in ("x", "y", "kind", "button", "clicks", "mods", "dx", "dy") if k in msg})
+                    elif t == "key":
+                        v.key(msg)
+                    elif t == "nav":
+                        v.navigate(msg.get("url") or "", remote=remote)
+                    elif t == "site":
+                        site = next((s for s in ST.for_account(acc) if s["id"] == msg.get("id")), None)
+                        if not site:
+                            raise ValueError("No such site.")
+                        v.navigate(site["url"], remote=remote)
+                    elif t == "back":
+                        v.back()
+                    elif t == "reload":
+                        v.reload()
+                    elif t == "viewport":
+                        v.viewport(msg.get("mobile"))
+                    elif t == "sites":
+                        ev({"type": "sites", **ST.public(acc)})
+                except (OSError, ConnectionError):
+                    raise
+                except Exception as e:
+                    ev({"type": "toast", "err": True, "text": str(e)})
+        except (OSError, ConnectionError, ValueError):
+            pass
+        finally:
             v.close()
 
     @staticmethod
@@ -1576,6 +1734,8 @@ class H(BaseHTTPRequestHandler):
         if parts[:2] == ["api", "projects"]:
             code, payload = projects_route("DELETE", parts, {})
             return self._send(code, payload)
+        if parts[:2] == ["api", "sites"]:
+            return self._send(*sites_route("DELETE", parts, {}, remote=self.device is not None))
         if self._admin() and len(parts) == 3 and parts[:2] == ["api", "devices"]:
             ok = revoke_device(parts[2])
             return self._send(200 if ok else 404, {"message": "Revoked" if ok else "No such device"})
@@ -1592,6 +1752,8 @@ class H(BaseHTTPRequestHandler):
         if parts[:2] == ["api", "projects"]:
             code, payload = projects_route("PATCH", parts, body)
             return self._send(code, payload)
+        if parts[:2] == ["api", "sites"]:
+            return self._send(*sites_route("PATCH", parts, body, remote=self.device is not None))
         return self._send(404, {"error": "not found"})
 
     def agent_api(self, path, body):
@@ -1640,6 +1802,12 @@ class H(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         if parts[:2] == ["api", "projects"] or parts == ["api", "view"]:
             code, payload = projects_route("POST", parts, body)
+            return self._send(code, payload)
+        if parts[:2] == ["api", "sites"]:
+            try:
+                code, payload = sites_route("POST", parts, body, remote=self.device is not None)
+            except Exception as e:
+                code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
             return self._send(code, payload)
         if parts[:2] == ["api", "browser"] and len(parts) == 4:
             if not self._admin():
