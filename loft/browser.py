@@ -11,7 +11,7 @@ Stdlib only: the CDP connection is a ~70-line WebSocket client.
   checks      <config>/checks.json          {scope: [{id, name, steps}]}  (scope = project id or folder)
   results     <cache>/browsers/<jid>-checks.json
 """
-import base64, itertools, json, os, secrets, shutil, signal, socket, struct, subprocess, sys, threading, time
+import base64, itertools, json, os, re, secrets, shutil, signal, socket, struct, subprocess, sys, threading, time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
@@ -19,12 +19,16 @@ from urllib.request import urlopen
 from . import paths
 
 MCP_PACKAGE = "@playwright/mcp@0.0.84"
-AGENT_NOTE = ("Loft shares a browser with you: the `loft-browser` MCP tools drive a Chromium the user watches live "
-              "in Loft and may take over. Use it to check UI changes in a real browser instead of starting another "
-              "browser. When you finish web work, leave the dev server running: Loft replays the project's recorded "
-              "browser checks against it. To turn a walkthrough into a check: loft_record_start, then walk the flow "
-              "with the browser tools (your clicks, typing and page loads are recorded), loft_record_expect for text "
-              "that must be on the page, then loft_record_save with a name. loft_run_checks runs the project's checks.")
+# The Playwright plugin opens its own (logged-out) browser window: agents with Loft's browser don't get it.
+DENY_TOOLS = "mcp__plugin_playwright_playwright"
+NOTE_SHARED = ("Loft shares a browser with you: the `loft-browser` MCP tools drive a Chromium the user watches live "
+               "in Loft and may take over. Use it whenever you need a browser; don't start another browser.")
+NOTE_WEB = ("Use it to check UI changes in a real browser. When you finish web work, leave the dev server running: "
+            "Loft replays the project's recorded "
+            "browser checks against it. To turn a walkthrough into a check: loft_record_start, then walk the flow "
+            "with the browser tools (your clicks, typing and page loads are recorded), loft_record_expect for text "
+            "that must be on the page, then loft_record_save with a name. loft_run_checks runs the project's checks.")
+AGENT_NOTE = NOTE_SHARED + " " + NOTE_WEB
 MAC_CHROME = ["Google Chrome.app/Contents/MacOS/Google Chrome", "Chromium.app/Contents/MacOS/Chromium",
               "Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "Brave Browser.app/Contents/MacOS/Brave Browser"]
 LINUX_CHROME = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"]
@@ -177,13 +181,45 @@ def free_port():
     return p
 
 
+_VERSIONS = {}
+
+
+def chrome_major(exe):
+    """The browser's major version ("142"), from `--version`; a recent guess if it won't say."""
+    if exe not in _VERSIONS:
+        try:
+            out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        m = re.search(r"(\d{2,4})\.\d+\.\d+", out)
+        _VERSIONS[exe] = m.group(1) if m else "140"
+    return _VERSIONS[exe]
+
+
+def user_agent(exe):
+    """A normal desktop Chrome user agent. Headless Chrome says "HeadlessChrome", and some sign-in pages
+    (Google's among them) refuse it."""
+    plat = "Macintosh; Intel Mac OS X 10_15_7" if paths.is_mac() else "X11; Linux x86_64"
+    return f"Mozilla/5.0 ({plat}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_major(exe)}.0.0.0 Safari/537.36"
+
+
+def chrome_args(exe, port, profile, headed=False, url="about:blank"):
+    """Every Loft Chrome. --password-store=basic: cookies are encrypted with Chrome's fixed key instead of the
+    desktop keyring, so a copied profile (an agent's, seeded from the signed-in one) can still read them."""
+    args = [exe, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"]
+    if not paths.is_mac():
+        args.append("--password-store=basic")
+    if headed:   # a plain window, no debugging port: sign-in pages treat it like any Chrome
+        return args + ["--window-size=1280,900", url]
+    return args + [f"--remote-debugging-port={port}", "--headless=new", "--mute-audio", "--window-size=1280,800",
+                   f"--user-agent={user_agent(exe)}", "--disable-blink-features=AutomationControlled", url]
+
+
 def _spawn(port, profile):
     exe = chrome_bin()
     if not exe:
         raise RuntimeError("No Chrome, Chromium, Edge or Brave found (set LOFT_CHROME).")
-    p = subprocess.Popen([exe, f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "--headless=new",
-                          "--no-first-run", "--no-default-browser-check", "--mute-audio", "--window-size=1280,800",
-                          "about:blank"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    p = subprocess.Popen(chrome_args(exe, port, profile), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
     for _ in range(100):
         if alive(port):
@@ -223,23 +259,52 @@ def ensure(jid):
         return rec
 
 
+def browser_ok():
+    return os.environ.get("LOFT_BROWSER") != "0" and bool(chrome_bin()) and bool(shutil.which("npx"))
+
+
 def wants_browser(cwd):
     """Give a new agent a browser? Only for web-looking folders, with Chrome and npx present."""
-    if os.environ.get("LOFT_BROWSER") == "0" or not chrome_bin() or not shutil.which("npx"):
+    if not browser_ok():
         return False
     return any((Path(cwd) / m).exists() for m in WEB_MARKERS)
 
 
-def prepare(cwd):
-    """Start a browser before the agent exists (its id isn't known yet). adopt() or discard() it after."""
-    if not wants_browser(cwd):
+def prepare(cwd, account=None):
+    """Start a browser before the agent exists (its id isn't known yet). adopt() or discard() it after.
+
+    Web-looking folders get one; so does every agent of a Loft account with signed-in sites
+    (loft/sites.py): its profile starts as a copy of that account's signed-in profile."""
+    from . import sites as ST
+    web = wants_browser(cwd)
+    have = ST.for_account(account) if account and browser_ok() else []
+    if not web and not have:
         return None
     key = secrets.token_hex(4)
     port, profile = free_port(), str(home() / f"profile-{key}")
-    rec = {"port": port, "profile": profile, "pid": _spawn(port, profile), "mcp": True,
+    if have:
+        ST.seed(account, profile)
+    rec = {"port": port, "profile": profile, "pid": _spawn(port, profile), "mcp": True, "web": web,
            "token": secrets.token_urlsafe(24), "keyfile": str(home() / f"agent-{key}.token")}
+    if have:
+        rec.update(account=account, sites=[{"name": s["name"], "url": s["url"]} for s in have])
+        try:   # the signed-in browser may hold newer cookies than its files on disk
+            ST.inject_live(account, port)
+        except Exception:
+            pass
     paths.write_private(rec["keyfile"], rec["token"])   # read by loft/agent_mcp.py; never on a command line
     return rec
+
+
+def agent_note(rec):
+    """The system prompt note for an agent with this browser."""
+    from . import sites as ST
+    parts = [NOTE_SHARED]
+    if rec.get("web", True):
+        parts.append(NOTE_WEB)
+    if rec.get("sites"):
+        parts.append(ST.agent_note(rec.get("account"), rec["sites"]))
+    return " ".join(parts)
 
 
 def jid_for_token(token):
@@ -273,6 +338,44 @@ def mcp_config(rec):
         "loft": {"command": sys.executable, "args": [str(Path(__file__).with_name("agent_mcp.py")),
                                                      "--key-file", rec["keyfile"],
                                                      "--port", os.environ.get("LOFT_PORT", "7717")]}}})
+
+
+_URLS = {}
+
+
+def page_url(port, ttl=3.0):
+    """The newest tab's URL (cheap: the HTTP endpoint, cached a few seconds). "" if none or not running."""
+    now = time.time()
+    hit = _URLS.get(port)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    try:
+        pages = [t for t in _get(port, "/json/list", timeout=0.5) if t.get("type") == "page"]
+        url = pages[0].get("url", "") if pages else ""   # /json/list puts the most recently active tab first
+    except Exception:
+        url = ""
+    _URLS[port] = (now, url)
+    return url
+
+
+def normalize_url(url):
+    """What the address bar navigates to: a bare host or host:port becomes http://..."""
+    url = (url or "").strip()
+    if url and "://" not in url and not url.startswith("about:"):
+        url = "http://" + url
+    return url
+
+
+def nav_ok(url, remote=False):
+    """Where the address bar may go. A paired phone only opens web pages: never file://, chrome://,
+    about: (except about:blank), view-source: or the like."""
+    if not remote:
+        return True
+    url = normalize_url(url)
+    if url in ("", "about:blank"):
+        return True
+    u = urlparse(url)
+    return u.scheme in ("http", "https") and bool(u.hostname)
 
 
 def _kill(rec):
@@ -546,10 +649,10 @@ class Viewer:
             return self.cdp.send("Input.insertText", {"text": ev["text"]}, session=self.session)
         press(self.cdp, self.session, ev.get("key", ""), ev.get("mods", 0))
 
-    def navigate(self, url):
-        url = url.strip()
-        if url and "://" not in url and not url.startswith("about:"):
-            url = "http://" + url
+    def navigate(self, url, remote=False):
+        if not nav_ok(url, remote):
+            raise ValueError("From the phone the browser opens web pages only (http and https).")
+        url = normalize_url(url)
         self.cdp.call("Page.navigate", {"url": url}, session=self.session)
 
     def back(self):

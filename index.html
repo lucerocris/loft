@@ -488,7 +488,36 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
 .bside .ok { color: var(--ok); } .bside .bad { color: var(--failed); }
 .bside input { height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--raised); color: var(--t1); font: inherit; }
 .ck-ok { color: var(--ok); } .ck-bad { color: var(--failed); }
-@media (max-width: 820px) { .bbar, .bside { padding-left: 16px; padding-right: 16px; } }
+/* ---------- Loft › Browser: signed-in sites ---------- */
+.top .ibtn[data-sites] { margin-left: 0; color: var(--t3); } .top .ibtn[data-sites] + .btn { margin-left: 4px; }
+.top { gap: 4px; } .top .vsw { margin-left: 8px; } .top .ibtn { width: 30px; }
+.btop .acts .ibtn[data-sites] { color: var(--t3); }
+.bchip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px 0 6px; border-radius: 99px; border: 1px solid var(--border-strong); background: var(--raised); color: var(--t2); font: 500 11px var(--sans); cursor: pointer; flex: none; }
+.bchip:hover { background: var(--selected); color: var(--t1); }
+.bchip svg { width: 12px; height: 12px; }
+.bchip .dot, .bdot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); display: inline-block; flex: none; }
+.bacc { display: inline-flex; align-items: center; gap: 6px; color: var(--t2); }
+.stabs { display: flex; align-items: center; gap: 6px; padding: 0 24px 10px; flex-wrap: wrap; }
+.stab { display: inline-flex; align-items: center; gap: 7px; height: 30px; max-width: 220px; padding: 0 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); color: var(--t2); font-weight: 500; cursor: pointer; }
+.stab .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stab:hover { color: var(--t1); border-color: var(--border-strong); }
+.stab[aria-pressed="true"] { background: var(--selected); color: var(--t1); border-color: var(--border-strong); }
+.stab .dot { width: 7px; height: 7px; } .stab .dot.on { background: var(--ok); } .stab .dot.off { background: none; box-shadow: inset 0 0 0 1.5px var(--t3); }
+.stab.add { border-style: dashed; color: var(--t3); padding: 0 10px; }
+.stabs .ibtn { width: 30px; height: 30px; }
+.stabs .ibtn[aria-pressed="true"] { background: var(--selected); color: var(--t1); }
+.shead { flex-wrap: wrap; row-gap: 10px; } .shead .ti { flex: 1 1 280px; }
+.sform { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.sform input { height: 30px; min-width: 0; flex: 1 1 140px; }
+.sform input.u { flex: 2 1 220px; font: 12px var(--mono); }
+.bside .sform .btn { height: 30px; }
+.sagent { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: none; color: var(--t1); padding: 6px 8px; margin: 0 -8px; border-radius: var(--r-sm); cursor: pointer; font: inherit; }
+.sagent:hover { background: var(--raised); }
+.sagent .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sagent .u { font: 11px var(--mono); color: var(--t3); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bside .danger { color: var(--failed); } .bside .danger.armed { background: var(--failed); color: var(--on-primary); }
+.cover .hint { max-width: 360px; text-align: center; margin: 0; }
+@media (max-width: 820px) { .bbar, .bside, .stabs { padding-left: 16px; padding-right: 16px; } .stab { height: 36px; } }
 </style>
 </head>
 <body>
@@ -499,6 +528,7 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
       <div class="vsw" data-vsw role="group" aria-label="View"></div>
       <button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button>
       <button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button>
+      <button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button>
       <button class="btn primary" id="newBtn" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button>
     </div>
     <div class="ctl"><div class="ddslot" id="grp"></div><div class="ddslot" id="filters"></div></div>
@@ -511,7 +541,7 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
       <div class="ctl"><div class="ddslot" id="bgrp"></div><div class="ddslot" id="bfilters"></div></div>
       <span class="grow"></span>
       <div class="usage" id="busage"></div>
-      <div class="acts"><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div></div>
+      <div class="acts"><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div></div>
     <div class="cols" id="cols"></div>
     <div class="bhint">j k move · h l column · Enter open · s start a todo · g group by · drag a todo to Working to start it · b inbox · n new</div>
   </section>
@@ -654,7 +684,7 @@ function renderInbox() {
     return `<div class="item ${s}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}">
       <span class="sd ${dotCls}"${s === "running" ? ` style="--ac:${accOf(c).hex}"` : ""} title="${{ needs: "Needs you", running: "Working", todo: "Todo", done: "Done", failed: "Failed" }[s]}"></span>
       <div class="tx"><div class="t">${esc(c.name)}</div><div class="d">${esc(d)}</div></div>
-      <div class="m">${ago(c.updated)}${projOf(c) && gb() !== "project" ? pdotH(projOf(c)) : ""}${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}</div></div>`;
+      <div class="m">${brChip(c)}${ago(c.updated)}${projOf(c) && gb() !== "project" ? pdotH(projOf(c)) : ""}${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}</div></div>`;
   };
   const sec = (label, list, cls, extra = "") => `<div class="sec ${cls || ""}">${label} <span>${list.length}</span>${extra}</div>`;
   const needs = by("needs"), run = by("running"), todo = by("todo"), done = by("done"), g = gb();
@@ -742,7 +772,7 @@ function renderBoard() {
     return `<div class="bcard ${s}${startingIds.has(c.id) ? " starting" : ""}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}"${todo ? ` draggable="true" title="Drag to Working to start"` : ""}>
       <div class="r1"><span class="t">${esc(c.name)}</span><span class="age">${ago(c.updated)}</span></div>
       <div class="s">${esc(s === "failed" && !/^failed/i.test(st) ? "Failed · " + st : st)}</div>
-      <div class="m">${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}${pj && gb() !== "project" ? pdotH(pj) : ""}<span class="f">${esc(proj)}</span>${live}</div>${pendingBadge(c)}${queueBadge(c)}</div>`;
+      <div class="m">${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}${pj && gb() !== "project" ? pdotH(pj) : ""}<span class="f">${esc(proj)}</span>${live}${brChip(c) ? `<span class="grow" style="flex:1"></span>${brChip(c)}` : ""}</div>${pendingBadge(c)}${queueBadge(c)}</div>`;
   };
   const g = gb();
   $("#cols").classList.toggle("laned", LANED.includes(g));
@@ -798,7 +828,7 @@ async function startTodo(id) {
 /* ---------- pane ---------- */
 let term = null, fit = null, ws = null, wsFor = null;
 function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], !!brView[c.id], c.kind, c.pending?.account || "", c.pending?.error || ""].join("|") : sel || "none"; }
-const SCREENS = ["new", "accounts", "setup", "projects", "organize"];
+const SCREENS = ["new", "accounts", "setup", "projects", "organize", "browser"];
 function renderPane() {
   if (loaded && S.setup && sel !== "accounts") sel = "setup";        // first run: no accounts.json yet
   if (sel === "setup" && loaded && !S.setup) sel = "accounts";
@@ -809,14 +839,15 @@ function renderPane() {
   $("#app").classList.toggle("open", !!sel);
   $("#app").classList.toggle("board", view === "board");
   const key = sel === "projects" ? "projects|" + JSON.stringify([S.projects, S.unsorted, S.accounts]) : SCREENS.includes(sel) ? sel : paneKey(c);
-  if (p.dataset.key === key) { if (c) refreshPane(c); return; }   // keep typing / terminal alive
+  if (p.dataset.key === key) { if (c) refreshPane(c); else if (sel === "browser") sitesAgents(); return; }   // keep typing / terminal alive
   p.dataset.key = key;
   if (sel !== "new" && !(sel === "accounts" && loginFor && wsFor === "login-" + loginFor) && (!c || c.kind === "todo" || brView[c.id] || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
-  if (!(c && c.kind === "agent" && brView[c.id])) disconnectBrowser();
+  if (!(c && c.kind === "agent" && brView[c.id]) && sel !== "browser") disconnectBrowser();
   if (sel === "new") return paneNew(p);
   if (sel === "accounts" || sel === "setup") return paneAccounts(p);
   if (sel === "projects") return paneProjects(p);
   if (sel === "organize") return paneOrganize(p);
+  if (sel === "browser") return paneSites(p);
   if (!c) return paneQuiet(p);
   if (c.kind === "todo") return paneTodo(p, c);
   if (brView[c.id]) return paneBrowser(p, c);
@@ -829,8 +860,8 @@ function head(c, actions = true) {
   const proj = c.folderName === "~" ? "home" : c.folderName;
   return `<div class="head"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
     <div class="ti"><label class="sr-only" hidden for="title">Name</label><input class="title" id="title" value="${esc(c.name)}" spellcheck="false" title="Click to rename">
-    <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span id="qbadge">${queueBadge(c)}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span><span id="ckbadge">${checksBadge(c)}</span></div></div>
-    ${actions && c.kind === "agent" ? `<button class="btn quiet" data-toggle-br title="Shared browser (W)" aria-pressed="${!!brView[c.id]}"><i data-lucide="${brView[c.id] ? "square-terminal" : "globe"}" class="ic"></i>${brView[c.id] ? "Agent" : "Browser"}</button>` : ""}
+    <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span id="qbadge">${queueBadge(c)}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span><span id="ckbadge">${checksBadge(c)}</span><span id="bacc">${brAccBadge(c)}</span></div></div>
+    ${actions && c.kind === "agent" ? `<button class="btn quiet" data-toggle-br title="Shared browser (W)" aria-pressed="${!!brView[c.id]}"><i data-lucide="${brView[c.id] ? "square-terminal" : "globe"}" class="ic"></i>${brView[c.id] ? "Agent" : "Browser"}<span class="bdot" id="brLive" title="On a page now"${c.browser?.live && !brView[c.id] ? "" : " hidden"}></span></button>` : ""}
     ${actions && c.col === "needs" && !brView[c.id] ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
     <button class="ibtn" data-menu aria-label="More actions" title="More"><i data-lucide="ellipsis" class="ic"></i></button></div>`;
 }
@@ -912,6 +943,8 @@ function refreshPane(c) {   // light update without rebuilding (keeps drafts, fo
   const ql = $("#qlist"), qh = queueList(c); if (ql && ql.dataset.h !== qh) { ql.dataset.h = qh; ql.innerHTML = qh; icons(); }
   const qb = $("#qbadge"), bh = queueBadge(c); if (qb && qb.dataset.h !== bh) { qb.dataset.h = bh; qb.innerHTML = bh; icons(); }
   const cb = $("#ckbadge"), ch = checksBadge(c); if (cb && cb.dataset.h !== ch) { cb.dataset.h = ch; cb.innerHTML = ch; if (BR.id === c.id && !BR.recording) brInfo(); }
+  const ba = $("#bacc"), bh2 = brAccBadge(c); if (ba && ba.dataset.h !== bh2) { ba.dataset.h = bh2; ba.innerHTML = bh2; }
+  const bl = $("#brLive"); if (bl) bl.hidden = !(c.browser?.live && !brView[c.id]);
 }
 /* ---------- prompt queue ---------- */
 function atTime(iso) {
@@ -1222,6 +1255,116 @@ function openLoginMenu(btn) {
   m.querySelectorAll("[data-bblogin]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); closeMenu(); bsend({ type: b.dataset.bblogin === "save" ? "login-save" : "login-use" }); }, { once: true }));
 }
 document.addEventListener("keydown", e => { if (e.target?.id === "burl" && e.key === "Enter") { e.preventDefault(); const v = e.target.value.trim(); if (v) bsend({ type: "nav", url: /^\d+$/.test(v) ? `localhost:${v}` : v }); $("#bimg")?.focus(); } }, true);
+
+/* ---------- Loft › Browser: signed-in sites ---------- */
+// Per account: sites you sign in to once in its own Chrome profile (loft/sites.py), streamed over
+// /ws/sites/<account> like an agent's browser. Every agent started on the account gets a copy, signed in.
+let SW = { acc: store.get("loft.sitesAcct") || "", data: null, adding: false, edit: false };
+const GLOBE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`;
+const hostOf = u => { try { return new URL(u).hostname; } catch { return ""; } };
+function brChip(c) {   // an agent's browser is on a page: one click opens it
+  const b = c.browser; if (c.kind !== "agent" || !b?.live) return "";
+  const sa = b.account && accById(b.account);
+  return `<button class="bchip" data-agentbr="${esc(c.id)}" title="Open its browser · ${esc(b.url || "")}${sa ? ` · signed in to ${esc(sa.label)}'s sites` : ""}"><span class="dot"></span>${GLOBE}</button>`;
+}
+function brAccBadge(c) {
+  const b = c.browser; if (c.kind !== "agent" || !b?.account) return "";
+  const a = accById(b.account); if (!a) return "";
+  return `<span class="sep">·</span><span class="bacc" title="Its browser started signed in to these sites: Loft › Browser › ${esc(a.label)}">${GLOBE.replace("<svg", '<svg width="12" height="12"')}signed in as ${esc(a.label)}</span>`;
+}
+function sitesAcc() { const a = S.accounts || []; return (a.find(x => x.id === SW.acc) || a.find(x => x.id === S.defaultAccount) || a[0])?.id || ""; }
+function paneSites(p) {
+  const acc = sitesAcc();
+  p.innerHTML = `<div class="head shead"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
+      <div class="ti"><div class="title" style="border:0">Browser</div><div class="meta" id="smeta"></div></div>
+      ${multiAcc() ? `<div class="seg" role="group" aria-label="Account">${S.accounts.map(a => `<button data-sacc="${esc(a.id)}" aria-pressed="${a.id === acc}" title="${esc(accTitle(a))}">${dotH(a)}${esc(a.label)}</button>`).join("")}</div>` : ""}
+      <button class="btn quiet" data-sw="window" title="Open this browser in a normal Chrome window on this computer, for sign-ins that refuse the one in Loft"><i data-lucide="app-window" class="ic"></i>Open in a window</button></div>
+    <div class="stabs" id="stabs"></div>
+    <div class="bbar">
+      <button class="ibtn" data-bb="back" title="Back" aria-label="Back"><i data-lucide="chevron-left" class="ic"></i></button>
+      <button class="ibtn" data-bb="reload" title="Reload" aria-label="Reload"><i data-lucide="rotate-cw" class="ic"></i></button>
+      <input id="burl" aria-label="Address" spellcheck="false" placeholder="Address" value="${esc(BR.id === "sites:" + acc ? BR.url : "")}">
+      <button class="ibtn" data-bb="mobile" title="Phone size" aria-label="Phone size" aria-pressed="false"><i data-lucide="smartphone" class="ic"></i></button>
+    </div>
+    <div class="bview" id="bview"><img id="bimg" tabindex="0" draggable="false" alt="Your signed-in browser"><div class="cover" id="bcover"><div><i data-lucide="loader" class="ic"></i>Opening the browser…</div></div></div>
+    <div class="bside" id="sside"></div>`;
+  icons(); mountSites(acc);
+}
+function mountSites(acc, fresh) {
+  const img = $("#bimg"); if (!img) return; brInput(img);
+  const id = "sites:" + acc;
+  if (!fresh && BR.id === id && BR.ws && BR.ws.readyState <= 1) { if (BR.blob) { img.src = BR.blob; $("#bcover").hidden = true; } return sitesRender(); }
+  disconnectBrowser(); BR.id = id; BR.url = ""; SW.acc = acc;
+  if (!acc) { $("#bcover").innerHTML = `<div>Set up an account first</div>`; return; }
+  const sock = new WebSocket(`ws://${location.host}/ws/sites/${encodeURIComponent(acc)}?t=${TOKEN}`); sock.binaryType = "blob"; BR.ws = sock;
+  sock.onmessage = e => { if (sock !== BR.ws) return; if (typeof e.data === "string") return sitesEvent(JSON.parse(e.data)); brFrame(e.data); };
+  sock.onclose = () => { if (sock !== BR.ws) return; BR.ws = null; const cv = $("#bcover"); if (!cv) return; cv.hidden = false;
+    cv.innerHTML = SW.data?.browser?.window ? windowCover() : `<div>Browser closed<button class="btn secondary" data-sw="reconnect">Reconnect</button></div>`; icons(); };
+  sitesRender(); brMarks();
+}
+const windowCover = () => `<div><i data-lucide="app-window" class="ic"></i>Open in a window on this computer<p class="hint">Sign in there. When you're done, close the window (or press the button) and Loft picks up the session.</p><button class="btn secondary" data-sw="closewin">Done, close the window</button></div>`;
+function sitesEvent(m) {
+  if (m.type === "hello" || m.type === "sites") {
+    SW.data = m; sitesRender();
+    if (m.type === "hello" && !m.browser?.window && (!BR.url || BR.url === "about:blank") && m.sites?.length) bsend({ type: "site", id: m.sites[0].id });
+    else if (m.type === "hello" && !m.sites?.length) { SW.adding = true; sitesRender(); const cv = $("#bcover"); if (cv && !BR.blob) cv.innerHTML = `<div>Add the sites your agents use: a spreadsheet, a helpdesk, a dashboard.<p class="hint">Sign in to each one here once. Every agent you start on this account opens them already signed in.</p></div>`; }
+    return;
+  }
+  if (m.type === "window") { SW.data = { ...(SW.data || {}), browser: { running: true, window: true } }; const cv = $("#bcover"); if (cv) { cv.hidden = false; cv.innerHTML = windowCover(); icons(); } return sitesRender(); }
+  if (m.type === "url") { const was = BR.url; BR.url = m.url; const u = $("#burl"); if (u && document.activeElement !== u) u.value = m.url === "about:blank" ? "" : m.url; if (hostOf(was) !== hostOf(m.url)) sitesTabs(); return; }
+  if (m.type === "toast") return toast(m.text, m.err);
+}
+function sitesTabs() {
+  const el = $("#stabs"); if (!el) return; const D = SW.data, list = D?.sites || [], h = hostOf(BR.url);
+  el.innerHTML = list.map(s => `<button class="stab" data-site="${esc(s.id)}" aria-pressed="${!!h && hostOf(s.url) === h}" title="${esc(s.url)} · ${s.signedIn ? "has a saved session" : "not signed in yet"}"><span class="dot ${s.signedIn ? "on" : "off"}"></span><span class="n">${esc(s.name)}</span></button>`).join("")
+    + `<button class="stab add" data-sw="add"><i data-lucide="plus" class="ic"></i>Add site</button>`
+    + (list.length ? `<button class="ibtn" data-sw="edit" aria-pressed="${SW.edit}" title="Edit sites" aria-label="Edit sites"><i data-lucide="pencil" class="ic"></i></button>` : "");
+  icons();
+}
+function sitesRender() {
+  const acc = sitesAcc(), a = accById(acc), D = SW.data && SW.data.account === acc ? SW.data : null, list = D?.sites || [];
+  const meta = $("#smeta"); if (meta && a) { const on = list.filter(s => s.signedIn).length;
+    meta.innerHTML = `${dotH(a)}<span>${esc(a.label)}</span><span class="sep">·</span><span>${list.length ? `${list.length} site${list.length > 1 ? "s" : ""}, ${on} signed in` : "no sites yet"}</span><span class="sep">·</span><span class="st-muted">new agents on ${esc(a.label)} start signed in to these</span>${D?.browser?.window ? `<span class="sep">·</span><span class="st-needs">open in a window</span>` : ""}`; }
+  sitesTabs();
+  const el = $("#sside"); if (!el) return;
+  let h = "";
+  if (SW.adding) h += `<div class="row"><span class="label">Add a site</span><span class="grow hint" style="margin:0">Its address and a short name. You sign in on the page above.</span></div>
+    <div class="sform"><input id="sname" placeholder="Name, e.g. Helpdesk" aria-label="Site name"><input id="surl" class="u" placeholder="https://app.example.com" aria-label="Site address" spellcheck="false">
+      <button class="btn primary" data-sw="addgo">Add</button>${/^https?:/.test(BR.url) ? `<button class="btn quiet" data-sw="addcur" title="Fill in the page that's open">Use this page</button>` : ""}<button class="btn quiet" data-sw="addx">Cancel</button></div>`;
+  if (SW.edit && list.length) h += `<div class="row"><span class="label">Sites</span></div>` + list.map(s => `<div class="sform"><input data-sfield="name" value="${esc(s.name)}" aria-label="Name"><input data-sfield="url" class="u" value="${esc(s.url)}" aria-label="Address" spellcheck="false">
+      <button class="btn secondary" data-ssave="${esc(s.id)}">Save</button><button class="btn quiet danger" data-sdel="${esc(s.id)}">Remove</button></div>`).join("");
+  h += `<div class="row"><span class="label">Agent browsers</span><span class="grow hint" style="margin:0">Open one to watch or take over</span></div><div id="sagents"></div>`;
+  el.innerHTML = h; icons(); sitesAgents();
+}
+function sitesAgents() {
+  const el = $("#sagents"); if (!el) return;
+  const list = S.cards.filter(c => c.kind === "agent" && c.browser && (c.browser.live || c.browser.account || c.browser.mcp) && c.col !== "done")
+    .sort((x, y) => (!!y.browser.live - !!x.browser.live) || x.name.localeCompare(y.name));
+  const h = list.length ? list.map(c => { const s = statusOf(c), sa = c.browser.account && accById(c.browser.account);
+    return `<button class="sagent" data-agentbr="${esc(c.id)}"><span class="sd ${s === "running" ? "acc live" : s}" style="width:8px;height:8px;border-radius:50%;flex:none;--ac:${accOf(c).hex}"></span><span class="grow">${esc(c.name)}</span>${sa ? `<span class="st-muted">${esc(sa.label)}'s sites</span>` : ""}<span class="u">${c.browser.live ? esc(c.browser.url.replace(/^https?:\/\//, "")) : "blank"}</span></button>`; }).join("")
+    : `<div class="hint" style="margin:0">None running. Agents get a browser when their folder is a web project or their account has sites.</div>`;
+  if (el.dataset.h !== h) { el.dataset.h = h; el.innerHTML = h; }
+}
+async function sitesClick(t) {
+  const acc = sitesAcc(), base = `/api/sites/${encodeURIComponent(acc)}`;
+  const refresh = () => bsend({ type: "sites" });
+  if (t.dataset.sacc) { SW.acc = t.dataset.sacc; store.set("loft.sitesAcct", SW.acc); SW.adding = SW.edit = false; SW.data = null; $("#pane").dataset.key = ""; return renderPane(); }
+  if (t.dataset.site) { if (SW.data?.browser?.window) return toast("Close the window first.", true); bsend({ type: "site", id: t.dataset.site }); return $("#bimg")?.focus(); }
+  if (t.dataset.ssave) { const row = t.closest(".sform"), f = k => row.querySelector(`[data-sfield="${k}"]`).value;
+    try { toast((await apiM("PATCH", `${base}/${t.dataset.ssave}`, { name: f("name"), url: f("url") })).message); refresh(); } catch (e) { toast(e.message, true); } return; }
+  if (t.dataset.sdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.textContent = "Click to confirm"; return; }
+    try { toast((await apiM("DELETE", `${base}/${t.dataset.sdel}`)).message); refresh(); } catch (e) { toast(e.message, true); } return; }
+  const a = t.dataset.sw;
+  if (a === "add") { SW.adding = !SW.adding; sitesRender(); return $("#sname")?.focus(); }
+  if (a === "addx") { SW.adding = false; return sitesRender(); }
+  if (a === "edit") { SW.edit = !SW.edit; return sitesRender(); }
+  if (a === "addcur") { $("#surl").value = BR.url; if (!$("#sname").value) $("#sname").value = hostOf(BR.url).replace(/^www\./, ""); return; }
+  if (a === "addgo") { const url = $("#surl")?.value.trim(), name = $("#sname")?.value.trim(); if (!url) { toast("Give the site's address.", true); return $("#surl")?.focus(); }
+    try { const r = await api(base, { name, url }); toast(r.message); SW.adding = false; SW.data = { ...SW.data, ...r }; sitesRender(); bsend({ type: "site", id: r.site.id }); setTimeout(refresh, 1500); } catch (e) { toast(e.message, true); } return; }
+  if (a === "window") { t.disabled = true; try { toast((await api(`${base}/window`, { open: true, url: /^https?:/.test(BR.url) ? BR.url : "" })).message); SW.data = { ...(SW.data || {}), browser: { running: true, window: true } }; mountSites(acc, true); } catch (e) { toast(e.message, true); } t.disabled = false; return; }
+  if (a === "closewin") { t.disabled = true; try { toast((await api(`${base}/window`, { open: false })).message); SW.data = { ...(SW.data || {}), browser: { running: false, window: false } }; const cv = $("#bcover"); if (cv) cv.innerHTML = `<div><i data-lucide="loader" class="ic"></i>Opening the browser…</div>`; mountSites(acc, true); } catch (e) { toast(e.message, true); t.disabled = false; } return; }
+  if (a === "reconnect") return mountSites(acc, true);
+}
 
 /* ---------- voice ---------- */
 let rec = null, recTarget = null, chunks = [];
@@ -1676,6 +1819,9 @@ document.addEventListener("click", async e => {
   if (t.dataset.pcancel) { e.stopPropagation(); const r = await act(t.dataset.pcancel, "account", { cancel: true }, true); if (r) toast(r.message); try { apply(await api("/api/state")); } catch {} return; }
   if (t.dataset.accpop) { if (POP?.id === t.dataset.accpop) return closePop(); if ((S.accounts || []).length > 1) openPop(t.dataset.accpop, t); return; }
   if (t.hasAttribute("data-billsto")) { const id = sel; closeMenu(); return openPop(id, document.querySelector("[data-menu]") || t); }
+  if (t.dataset.agentbr) { e.stopPropagation(); brView[t.dataset.agentbr] = true; if (sel === t.dataset.agentbr) { $("#pane").dataset.key = ""; return render(); } return setSel(t.dataset.agentbr); }
+  if (t.hasAttribute("data-sites")) return go("browser");
+  if (t.dataset.sw || t.dataset.sacc || t.dataset.site || t.dataset.ssave || t.dataset.sdel) return sitesClick(t);
   if (t.matches(".item, .bcard")) return setSel(t.dataset.id);
   if (t.hasAttribute("data-settings")) return $("#menu").hidden || $("#menu").dataset.for !== "settings" ? openSettings(t) : closeMenu();
   if (t.dataset.go) return go(t.dataset.go);
@@ -1743,9 +1889,11 @@ document.addEventListener("keydown", e => {
   if (ae?.id === "title" && e.key === "Enter") return ae.blur();
   if (ae?.dataset?.rename && e.key === "Enter") return ae.blur();
   if (ae?.id === "aname" && e.key === "Enter") return $("[data-addgo]")?.click();
+  if ((ae?.id === "sname" || ae?.id === "surl") && e.key === "Enter") { e.preventDefault(); return $('[data-sw="addgo"]')?.click(); }
+  if (ae?.dataset?.sfield && e.key === "Enter") { e.preventDefault(); return ae.closest(".sform")?.querySelector("[data-ssave]")?.click(); }
   if (e.key === "Escape") { if (!$("#menu").hidden) return closeMenu(); if (rec?.state === "recording") return rec.stop(); if (typing && ae.id !== "reply") return ae.blur();
     if (sel === "setup") return;
-    if (sel === "new" || sel === "accounts" || sel === "projects" || (view === "board" && sel)) { if (sel === "accounts") { loginFor = null; loginEnded = false; adding = false; } const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
+    if (sel === "new" || sel === "accounts" || sel === "projects" || sel === "browser" || (view === "board" && sel)) { if (sel === "accounts") { loginFor = null; loginEnded = false; adding = false; } const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
   if (ae?.matches?.("#cols .bcard") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); return setSel(ae.dataset.id); }
   // V speaks — also while the reply box is empty and focused
   if ((e.key === "v" || e.key === "V") && !e.ctrlKey && !e.metaKey && !e.altKey && (!typing || (ae.id === "reply" && !ae.value) || (ae.id === "nprompt" && !ae.value))) { const tg = voiceTarget(); if (tg) { e.preventDefault(); return toggleVoice(tg); } }
@@ -1762,7 +1910,8 @@ document.addEventListener("keydown", e => {
   }
   else if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
   else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-  else if (e.key === "w") { const c = cardOf(sel); if (c?.kind === "agent") { e.preventDefault(); brView[c.id] = !brView[c.id]; render(); } }
+  else if (e.key === "w") { const c = cardOf(sel); e.preventDefault(); if (c?.kind === "agent") { brView[c.id] = !brView[c.id]; render(); } else go("browser"); }
+  else if (e.key === "W" && sel !== "setup") { e.preventDefault(); go("browser"); }
   else if (e.key === "t") { const c = cardOf(sel); if (c?.col === "needs") { e.preventDefault(); termView[c.id] = !termView[c.id]; render(); } else if (term) { e.preventDefault(); term.focus(); } }
 });
 

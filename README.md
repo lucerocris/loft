@@ -200,7 +200,28 @@ Click, scroll and type in it as in any browser.
 Files: browsers and screenshots in `~/.cache/loft/browsers/` (deleted when the agent is
 archived), checks in `~/.config/loft/checks.json`, logins in `~/.config/loft/logins.json`
 (mode 0600: they are session tokens). Uses Chrome, Chromium, Edge or Brave (`LOFT_CHROME`
-overrides). The Browser tab is desktop-only: phones can't reach it.
+overrides). A paired phone can watch and drive the browsers too, but only opens web pages (no
+`file://`). Protocol: [docs/browser-protocol.md](docs/browser-protocol.md).
+
+### Signed-in sites (Loft › Browser)
+
+The globe in the header (Shift+W, or W with no agent selected) opens Loft's own browser. Pick an
+account, add the sites your agents use (a spreadsheet, a helpdesk, a dashboard: name and URL) and
+sign in to each one there once. Each Loft account has its own Chrome profile for this, kept in
+`~/.local/share/loft/browser/<account>/`.
+
+Every agent started on that account then gets a browser, even outside a web project, whose
+profile is a copy of the signed-in one, so it opens those sites already signed in. Its system
+prompt lists the sites and tells it to ask you to sign in again here rather than type
+credentials, and the Playwright plugin's separate window is turned off for it
+(`--disallowedTools mcp__plugin_playwright_playwright`). A green dot on a site tab means the
+profile holds a session for it.
+
+Some sign-in pages refuse a headless browser (captcha, 2FA, "this browser may not be secure").
+**Open in a window** opens the same profile in a normal Chrome window; sign in there and close
+it (or press **Done, close the window**), and Loft picks the session up. Agents whose browser is
+on a page show a globe chip in the list and on the board: click it to watch. The agent's header
+says whose sites it is signed in to.
 
 ## Projects and grouping
 
