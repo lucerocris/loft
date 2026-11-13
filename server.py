@@ -569,14 +569,20 @@ def messages(jid, query):
     return 200, {**out, **page}
 
 
+def public_card(c):
+    """A card as /api/state sends it (in place)."""
+    c["updated"] = c["updated"].isoformat() if c["updated"] else None
+    if c["kind"] == "agent":
+        c["browser"] = browser_badge(c["id"])
+    c["cwd"] = c["cwd"].replace(str(HOME), "~")
+    c["folder"] = c["cwd"]
+    return c
+
+
 def snapshot():
     cards = B.load_cards(show_all_done=True)
     for c in cards:
-        c["updated"] = c["updated"].isoformat() if c["updated"] else None
-        if c["kind"] == "agent":
-            c["browser"] = browser_badge(c["id"])
-        c["cwd"] = c["cwd"].replace(str(HOME), "~")
-        c["folder"] = c["cwd"]
+        public_card(c)
     try:
         pcfg = P.load()
     except SystemExit:
@@ -1129,7 +1135,10 @@ def bulk_route(body):
 def assistant_route(method, parts, body):
     """GET/POST /api/assistant, POST /api/assistant/reset."""
     if parts == ["api", "assistant"] and method == "GET":
-        return 200, AS.info()
+        r = AS.info()
+        if r["card"]:
+            public_card(r["card"])
+        return 200, r
     if parts == ["api", "assistant"] and method == "POST":
         with LOCK:
             c = AS.card()

@@ -289,6 +289,7 @@ class Server(AssistantEnv):
         self.assertNotIn(jid, [j["id"] for j in C.load()])
         self.assertEqual(self.S.bulk_route({"action": "archive", "filter": "all"})[1]["ids"], [])
         info = self.S.assistant_route("GET", ["api", "assistant"], {})[1]
+        json.dumps(info)                                      # the card is sent as JSON
         self.assertEqual((info["id"], info["running"]), (jid, True))
         # busy: queued behind the turn; free: typed in
         code, r = self.S.assistant_route("POST", ["api", "assistant"], {"message": "and stop the rest"})

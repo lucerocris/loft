@@ -518,6 +518,69 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
 .bside .danger { color: var(--failed); } .bside .danger.armed { background: var(--failed); color: var(--on-primary); }
 .cover .hint { max-width: 360px; text-align: center; margin: 0; }
 @media (max-width: 820px) { .bbar, .bside, .stabs { padding-left: 16px; padding-right: 16px; } .stab { height: 36px; } }
+
+/* ---------- summaries, archive-all ---------- */
+.item .sm, .bcard .sm { font-size: 12px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item.done .sm, .bcard.done .sm { color: var(--t3); }
+.head .sum { font-size: 13px; color: var(--t2); margin: 2px 0 0 -1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec button + button { margin-left: 12px; }
+.sec button.arm, .bh button.arm { color: var(--needs); }
+.bh .barch { margin-left: auto; border: 0; background: none; color: var(--t3); font: 11px var(--sans); cursor: pointer; padding: 2px 4px; border-radius: var(--r-sm); }
+.bh .barch:hover { color: var(--t1); background: var(--raised); }
+.top .ibtn[data-assist] { margin-left: auto; color: var(--t3); } .top .ibtn[data-assist] + .ibtn[data-settings] { margin-left: 0; }
+.top .btn.sq { width: 32px; padding: 0; justify-content: center; } .top .brand { font-size: 0; gap: 0; }
+.btop .acts .ibtn[data-assist].asst-on, .ibtn.asst-on { color: var(--t1); background: var(--selected); }
+dialog.sheet .sh-b textarea { border: 1px solid var(--border-strong); background: var(--canvas); border-radius: var(--r-sm); padding: 8px 10px; outline: none; width: 100%; resize: vertical; min-height: 64px; line-height: 1.5; }
+dialog.sheet .sh-b textarea:focus { border-color: var(--t3); }
+
+/* ---------- assistant: a plain chat ---------- */
+.as { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.as-h { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 16px 0 20px; flex: none; }
+.as-h .nm { flex: 1; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.as-h .nm .ic { color: var(--t2); }
+.as-h .nm small { font-weight: 400; color: var(--t3); font-size: 12px; }
+.as-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.as-col { width: min(720px, 100%); margin: 0 auto; padding: 8px 24px 24px; display: flex; flex-direction: column; gap: 22px; }
+.as-u { align-self: flex-end; max-width: 82%; background: var(--raised); border-radius: 18px; padding: 10px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.55; }
+.as-u.sending { opacity: .6; }
+.as-a { font-size: 14px; line-height: 1.65; color: var(--t1); overflow-wrap: anywhere; }
+.as-a > :first-child { margin-top: 0; } .as-a > :last-child { margin-bottom: 0; }
+.as-a p { margin: 0 0 10px; }
+.as-a h1, .as-a h2, .as-a h3 { font-size: 15px; font-weight: 600; margin: 16px 0 6px; }
+.as-a ul, .as-a ol { margin: 0 0 10px; padding-left: 22px; } .as-a li { margin: 3px 0; }
+.as-a code { font: 12.5px var(--mono); background: var(--raised); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+.as-a pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; overflow-x: auto; margin: 0 0 10px; }
+.as-a pre code { background: none; border: 0; padding: 0; font-size: 12px; line-height: 1.6; }
+.as-a strong { font-weight: 600; } .as-a a { color: var(--t1); }
+.as-a table { border-collapse: collapse; margin: 0 0 10px; font-size: 13px; } .as-a td, .as-a th { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.as-tools { align-self: flex-start; color: var(--t3); font-size: 12px; margin: -10px 0 -10px; }
+.as-tools summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; }
+.as-tools summary::-webkit-details-marker { display: none; }
+.as-tools summary:hover { color: var(--t2); }
+.as-tools summary .ic { width: 13px; height: 13px; transition: transform .15s; }
+.as-tools[open] summary .ic.chev { transform: rotate(90deg); }
+.as-tools ol { margin: 6px 0 0; padding: 0 0 0 19px; display: flex; flex-direction: column; gap: 4px; }
+.as-tools li { font: 11.5px var(--mono); color: var(--t3); overflow-wrap: anywhere; } .as-tools li.bad { color: var(--failed); }
+.as-note { align-self: center; font-size: 11px; color: var(--t3); }
+.as-ask { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-strong); border-radius: var(--r-lg); padding: 12px 14px; }
+.as-ask .q { font-weight: 500; } .as-ask .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.as-typing { display: inline-flex; gap: 4px; padding: 6px 0; } .as-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--t3); animation: astype 1.2s infinite ease-in-out; }
+.as-typing i:nth-child(2) { animation-delay: .15s; } .as-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes astype { 0%, 60%, 100% { opacity: .25; transform: none; } 30% { opacity: 1; transform: translateY(-2px); } }
+.as-foot { flex: none; width: min(720px, 100%); margin: 0 auto; padding: 0 24px 20px; }
+.as-box { display: flex; align-items: flex-end; gap: 6px; border: 1px solid var(--border-strong); background: var(--surface); border-radius: 22px; padding: 8px 8px 8px 18px; }
+.as-box:focus-within { border-color: var(--t3); }
+.as-box textarea { flex: 1; border: 0; background: none; outline: none; resize: none; min-height: 24px; max-height: 220px; padding: 7px 0; font-size: 14px; line-height: 1.5; }
+.as-box .mic, .as-box .send { width: 34px; height: 34px; border-radius: 50%; }
+.as-hint { text-align: center; font-size: 11px; color: var(--t3); margin-top: 8px; }
+.as-empty { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.as-empty .as-foot { padding-bottom: 0; }
+.as-hello { text-align: center; font-size: 24px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 22px; }
+.as-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
+.as-chips button { height: 32px; padding: 0 14px; border: 1px solid var(--border-strong); background: none; border-radius: 999px; color: var(--t2); cursor: pointer; font-size: 13px; }
+.as-chips button:hover { background: var(--raised); color: var(--t1); }
+@media (max-width: 820px) { .as-col { padding: 8px 16px 20px; } .as-foot { padding: 0 12px 12px; } .as-h { padding: 0 8px 0 8px; } .as-hello { font-size: 20px; } .as-u { max-width: 90%; } }
+@media (prefers-reduced-motion: reduce) { .as-typing i { animation: none; opacity: .6; } }
 </style>
 </head>
 <body>
@@ -526,10 +589,11 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
     <div class="top">
       <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#5B8DFF"/><circle cx="41.5" cy="38" r="7" fill="#46C07D"/></svg>loft</div>
       <div class="vsw" data-vsw role="group" aria-label="View"></div>
+      <button class="ibtn" data-assist title="Assistant: ask Loft to do things (A)" aria-label="Assistant"><i data-lucide="sparkles" class="ic"></i></button>
       <button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button>
       <button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button>
       <button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button>
-      <button class="btn primary" id="newBtn" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button>
+      <button class="btn primary sq" id="newBtn" title="New task (N)" aria-label="New task"><i data-lucide="plus" class="ic"></i></button>
     </div>
     <div class="ctl"><div class="ddslot" id="grp"></div><div class="ddslot" id="filters"></div></div>
     <div class="list" id="list"></div>
@@ -541,7 +605,7 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
       <div class="ctl"><div class="ddslot" id="bgrp"></div><div class="ddslot" id="bfilters"></div></div>
       <span class="grow"></span>
       <div class="usage" id="busage"></div>
-      <div class="acts"><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div></div>
+      <div class="acts"><button class="ibtn" data-assist title="Assistant: ask Loft to do things (A)" aria-label="Assistant"><i data-lucide="sparkles" class="ic"></i></button><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div></div>
     <div class="cols" id="cols"></div>
     <div class="bhint">j k move · h l column · Enter open · s start a todo · g group by · drag a todo to Working to start it · b inbox · n new</div>
   </section>
@@ -552,6 +616,7 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
 <dialog class="phone" id="phoneDlg" aria-labelledby="phoneTitle"></dialog>
 <dialog class="sheet" id="projDlg" aria-labelledby="projTitle"></dialog>
 <dialog class="fpick" id="fsDlg" aria-labelledby="fsTitle"></dialog>
+<dialog class="sheet" id="renDlg" aria-labelledby="renTitle"></dialog>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="/static/lucide.min.js"></script>
@@ -683,13 +748,13 @@ function renderInbox() {
     const d = c.kind === "todo" ? (noPrompt(c) ? "Not started" : c.detail) : (c.col === "done" && c.result ? c.result : c.detail) || "";
     return `<div class="item ${s}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}">
       <span class="sd ${dotCls}"${s === "running" ? ` style="--ac:${accOf(c).hex}"` : ""} title="${{ needs: "Needs you", running: "Working", todo: "Todo", done: "Done", failed: "Failed" }[s]}"></span>
-      <div class="tx"><div class="t">${esc(c.name)}</div><div class="d">${esc(d)}</div></div>
+      <div class="tx"><div class="t">${esc(c.name)}</div>${c.summary ? `<div class="sm" title="${esc(c.summary)}">${esc(c.summary)}</div>` : ""}<div class="d">${esc(d)}</div></div>
       <div class="m">${brChip(c)}${ago(c.updated)}${projOf(c) && gb() !== "project" ? pdotH(projOf(c)) : ""}${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}</div></div>`;
   };
   const sec = (label, list, cls, extra = "") => `<div class="sec ${cls || ""}">${label} <span>${list.length}</span>${extra}</div>`;
   const needs = by("needs"), run = by("running"), todo = by("todo"), done = by("done"), g = gb();
   if (g !== "status") {
-    const doneSec = done.length ? sec("Done", done, "", `<button data-toggle-done>${showDone ? "Hide" : "Show"}</button>`) : "";
+    const doneSec = done.length ? sec("Done", done, "", `${archAllBtn(done)}<button data-toggle-done>${showDone ? "Hide" : "Show"}</button>`) : "";
     let h = "";
     if (g === "none") h = byStatus(v.filter(c => c.col !== "done")).map(item).join("") || `<div class="none">Nothing running or waiting</div>`;
     else for (const d of dimValues(g, v)) {
@@ -707,7 +772,7 @@ function renderInbox() {
   let h = sec("Needs you", needs, needs.length ? "alert" : "") + (needs.length ? needs.map(item).join("") : `<div class="none">Nothing waiting on you</div>`);
   if (run.length) h += sec("Working", run) + run.map(item).join("");
   if (todo.length) h += sec("Todo", todo) + todo.map(item).join("");
-  if (done.length) h += sec("Done", done, "", `<button data-toggle-done>${showDone ? "Hide" : "Show"}</button>`) + (showDone ? done.slice(0, 30).map(item).join("") : "");
+  if (done.length) h += sec("Done", done, "", `${archAllBtn(done)}<button data-toggle-done>${showDone ? "Hide" : "Show"}</button>`) + (showDone ? done.slice(0, 30).map(item).join("") : "");
   $("#list").innerHTML = h;
   $("#usage").innerHTML = usageHTML();
 }
@@ -764,14 +829,14 @@ function renderBoard() {
   boardStale = false;
   $("#bgrp").innerHTML = groupHTML(); $("#bfilters").innerHTML = filtersHTML(); $("#busage").innerHTML = usageHTML();
   const had = document.activeElement?.closest?.("#cols .bcard")?.dataset.id;
-  const cols = boardCols();
+  const v0 = visible(), cols = boardCols(v0);
   const card = c => {
     const s = statusOf(c), todo = c.kind === "todo", pj = projOf(c), proj = pj && gb() !== "project" ? pj.name : (c.folderName === "~" ? "home" : c.folderName);
     const st = todo ? (noPrompt(c) ? "Not started" : c.detail) : (c.col === "done" && c.result ? c.result : c.detail) || "";
     const live = s === "running" ? `<span>·</span><span ${accColor(c)}>live</span>` : "";
     return `<div class="bcard ${s}${startingIds.has(c.id) ? " starting" : ""}" role="option" tabindex="0" data-id="${esc(c.id)}" aria-selected="${c.id === sel}"${todo ? ` draggable="true" title="Drag to Working to start"` : ""}>
       <div class="r1"><span class="t">${esc(c.name)}</span><span class="age">${ago(c.updated)}</span></div>
-      <div class="s">${esc(s === "failed" && !/^failed/i.test(st) ? "Failed · " + st : st)}</div>
+      ${c.summary ? `<div class="sm" title="${esc(c.summary)}">${esc(c.summary)}</div>` : ""}<div class="s">${esc(s === "failed" && !/^failed/i.test(st) ? "Failed · " + st : st)}</div>
       <div class="m">${multiAcc() && gb() !== "account" ? dotH(accOf(c)) : ""}${pj && gb() !== "project" ? pdotH(pj) : ""}<span class="f">${esc(proj)}</span>${live}${brChip(c) ? `<span class="grow" style="flex:1"></span>${brChip(c)}` : ""}</div>${pendingBadge(c)}${queueBadge(c)}</div>`;
   };
   const g = gb();
@@ -784,7 +849,7 @@ function renderBoard() {
     const more = k === "done" && cols.doneAll > list.length || (k === "done" && showDone && cols.doneAll > 3)
       ? `<button class="bmore" data-toggle-done>${showDone ? "Show only the last day" : `Show all ${cols.doneAll}`}</button>` : "";
     return `<div class="bcol" data-col="${k}" role="listbox" aria-label="${l}"><div class="bh ${alert ? "alert" : ""}">${alert ? `<span class="dot" style="background:var(--needs)"></span>` : ""}${l}<span class="n">${n}</span>
-      ${k === "todo" ? `<button class="ibtn" id="newBtn4" title="New task (N)" aria-label="New task"><i data-lucide="plus" class="ic"></i></button>` : ""}</div>
+      ${k === "todo" ? `<button class="ibtn" id="newBtn4" title="New task (N)" aria-label="New task"><i data-lucide="plus" class="ic"></i></button>` : ""}${k === "done" ? archAllBtn(v0.filter(c => c.col === "done"), "barch") : ""}</div>
       ${list.length ? list.map(card).join("") : `<div class="bempty"><b>${EMPTY[k][0]}</b><span>${EMPTY[k][1]}</span></div>`}${more}</div>`;
   }).join("");
   icons();
@@ -828,7 +893,7 @@ async function startTodo(id) {
 /* ---------- pane ---------- */
 let term = null, fit = null, ws = null, wsFor = null;
 function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], !!brView[c.id], c.kind, c.pending?.account || "", c.pending?.error || ""].join("|") : sel || "none"; }
-const SCREENS = ["new", "accounts", "setup", "projects", "organize", "browser"];
+const SCREENS = ["new", "accounts", "setup", "projects", "organize", "browser", "assistant"];
 function renderPane() {
   if (loaded && S.setup && sel !== "accounts") sel = "setup";        // first run: no accounts.json yet
   if (sel === "setup" && loaded && !S.setup) sel = "accounts";
@@ -839,7 +904,8 @@ function renderPane() {
   $("#app").classList.toggle("open", !!sel);
   $("#app").classList.toggle("board", view === "board");
   const key = sel === "projects" ? "projects|" + JSON.stringify([S.projects, S.unsorted, S.accounts]) : SCREENS.includes(sel) ? sel : paneKey(c);
-  if (p.dataset.key === key) { if (c) refreshPane(c); else if (sel === "browser") sitesAgents(); return; }   // keep typing / terminal alive
+  document.querySelectorAll("[data-assist]").forEach(b => b.classList.toggle("asst-on", sel === "assistant"));
+  if (p.dataset.key === key) { if (c) refreshPane(c); else if (sel === "browser") sitesAgents(); else if (sel === "assistant") asRender(); return; }   // keep typing / terminal alive
   p.dataset.key = key;
   if (sel !== "new" && !(sel === "accounts" && loginFor && wsFor === "login-" + loginFor) && (!c || c.kind === "todo" || brView[c.id] || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
   if (!(c && c.kind === "agent" && brView[c.id]) && sel !== "browser") disconnectBrowser();
@@ -848,6 +914,8 @@ function renderPane() {
   if (sel === "projects") return paneProjects(p);
   if (sel === "organize") return paneOrganize(p);
   if (sel === "browser") return paneSites(p);
+  if (sel !== "assistant") asStop();
+  if (sel === "assistant") return paneAssist(p);
   if (!c) return paneQuiet(p);
   if (c.kind === "todo") return paneTodo(p, c);
   if (brView[c.id]) return paneBrowser(p, c);
@@ -860,6 +928,7 @@ function head(c, actions = true) {
   const proj = c.folderName === "~" ? "home" : c.folderName;
   return `<div class="head"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
     <div class="ti"><label class="sr-only" hidden for="title">Name</label><input class="title" id="title" value="${esc(c.name)}" spellcheck="false" title="Click to rename">
+    <div class="sum" id="sumLine" title="${esc(c.summary || "")}"${c.summary ? "" : " hidden"}>${esc(c.summary || "")}</div>
     <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span id="qbadge">${queueBadge(c)}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span><span id="ckbadge">${checksBadge(c)}</span><span id="bacc">${brAccBadge(c)}</span></div></div>
     ${actions && c.kind === "agent" ? `<button class="btn quiet" data-toggle-br title="Shared browser (W)" aria-pressed="${!!brView[c.id]}"><i data-lucide="${brView[c.id] ? "square-terminal" : "globe"}" class="ic"></i>${brView[c.id] ? "Agent" : "Browser"}<span class="bdot" id="brLive" title="On a page now"${c.browser?.live && !brView[c.id] ? "" : " hidden"}></span></button>` : ""}
     ${actions && c.col === "needs" && !brView[c.id] ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
@@ -938,6 +1007,8 @@ function paneQuiet(p) {
   icons();
 }
 function refreshPane(c) {   // light update without rebuilding (keeps drafts, focus, terminal)
+  const sl = $("#sumLine"); if (sl && sl.textContent !== (c.summary || "")) { sl.textContent = c.summary || ""; sl.title = c.summary || ""; sl.hidden = !c.summary; }
+  const ti = $("#title"); if (ti && document.activeElement !== ti && ti.value !== c.name) ti.value = c.name;
   const a = $("#agoLabel"); if (a) a.textContent = ago(c.updated);
   const q = $("#askText"); if (q && c.detail && q.textContent !== c.detail) q.textContent = c.detail;
   const ql = $("#qlist"), qh = queueList(c); if (ql && ql.dataset.h !== qh) { ql.dataset.h = qh; ql.innerHTML = qh; icons(); }
@@ -1055,7 +1126,7 @@ async function accountsClick(t) {
     t.disabled = true;
     try {
       const r = await api("/api/accounts/setup", { migrate: !!$("#smig")?.checked, label: $("#slabel")?.value.trim(), color: AC.setupColor || "green", importCswap: !!$("#scswap")?.checked });
-      toast(r.message); AC = r; S = await api("/api/state"); setSel("accounts");
+      toast(r.message); AC = r; S = strip(await api("/api/state")); setSel("accounts");
     } catch (e) { $("#serr").textContent = e.message; t.disabled = false; }
   }
 }
@@ -1397,9 +1468,9 @@ function deliver(target, text) {
   if (target === "term") { paste(text); term?.focus(); return; }
   const el = $("#" + target); if (!el) return;
   el.value = (el.value.trim() ? el.value.trimEnd() + " " : "") + text; el.dispatchEvent(new Event("input", { bubbles: true })); grow(el); el.focus();
-  if (auto) { if (target === "nprompt") submitNew(true); else if (target === "reply") sendReply(); else if (target === "tprompt") $("[data-start]")?.click(); }
+  if (auto) { if (target === "atext") asSend(); else if (target === "nprompt") submitNew(true); else if (target === "reply") sendReply(); else if (target === "tprompt") $("[data-start]")?.click(); }
 }
-function voiceTarget() { if (sel === "new") return "nprompt"; if ($("#reply")) return "reply"; if ($("#tprompt")) return "tprompt"; if ($("#xt")) return "term"; return null; }
+function voiceTarget() { if (sel === "new") return "nprompt"; if (sel === "assistant") return "atext"; if ($("#reply")) return "reply"; if ($("#tprompt")) return "tprompt"; if ($("#xt")) return "term"; return null; }
 
 /* ---------- actions ---------- */
 async function sendReply(text) {
@@ -1425,12 +1496,14 @@ async function submitNew(start) {
     setSel(null);
   } catch (e) { $("#nerr").textContent = e.message; } finally { b.disabled = false; }
 }
-async function waitOpen(id) { for (let i = 0; i < 12 && !cardOf(id); i++) { try { S = await api("/api/state"); } catch {} await new Promise(r => setTimeout(r, 400)); } setSel(id); }
+async function waitOpen(id) { for (let i = 0; i < 12 && !cardOf(id); i++) { try { S = strip(await api("/api/state")); } catch {} await new Promise(r => setTimeout(r, 400)); } setSel(id); }
 function openMenu(btn) {
   const c = cardOf(sel); if (!c) return; const m = $("#menu"), running = c.col === "running", todo = c.kind === "todo";
   m.innerHTML = `${!todo ? `<button data-do="pin"><i data-lucide="${c.pinned ? "pin-off" : "pin"}" class="ic"></i>${c.pinned ? "Unpin" : "Pin to top"}</button>` : ""}
     ${projMenuHTML(c)}
     ${(S.accounts || []).length > 1 ? `<button class="bill" data-billsto title="Bill this ${todo ? "todo" : "agent"} to another account"><i data-lucide="arrow-left-right" class="ic"></i>Bills to<span class="cur">${dotH(accOf(c))}${esc(accOf(c).label)}<i data-lucide="chevron-right" class="ic" style="width:12px;height:12px"></i></span></button>` : ""}
+    <button data-rename><i data-lucide="pencil" class="ic"></i>Rename…</button>
+    <button data-describe title="Write the title and summary again from its first prompt"><i data-lucide="wand-sparkles" class="ic"></i>Describe again</button>
     ${!todo ? `<button data-do="open"><i data-lucide="app-window" class="ic"></i>Open in terminal</button>` : ""}
     ${running ? `<button data-do="stop"><i data-lucide="square" class="ic"></i>Stop</button>` : ""}
     <hr><button class="danger" data-do="archive" ${running ? "disabled title='Stop it first'" : ""}><i data-lucide="${todo ? "trash-2" : "archive"}" class="ic"></i><span>${todo ? "Delete" : "Archive"}</span></button>`;
@@ -1506,7 +1579,7 @@ async function sheetClick(t) {
   if (t.hasAttribute("data-pfadd")) return addFolder();
   if (t.hasAttribute("data-pdel")) {
     if (!t.classList.contains("armed")) { t.classList.add("armed"); t.querySelector("span").textContent = "Delete? Agents become unsorted"; return; }
-    try { const r = await apiM("DELETE", `/api/projects/${PE.id}`); toast(r.message); d.close(); S = await api("/api/state"); render(); } catch (e) { toast(e.message, true); }
+    try { const r = await apiM("DELETE", `/api/projects/${PE.id}`); toast(r.message); d.close(); S = strip(await api("/api/state")); render(); } catch (e) { toast(e.message, true); }
     return;
   }
   if (t.hasAttribute("data-psave")) {
@@ -1514,7 +1587,7 @@ async function sheetClick(t) {
     const body = { name: PE.name.trim(), color: PE.color, accounts: PE.accounts, defaultAccount: PE.defaultAccount, folders: PE.folders };
     if (!body.name) { $("#perr").textContent = "Give the project a name."; return $("#pname").focus(); }
     t.disabled = true;
-    try { const r = PE.id ? await apiM("PATCH", `/api/projects/${PE.id}`, body) : await api("/api/projects", body); toast(PE.id ? "Saved" : r.message); d.close(); S = await api("/api/state"); render(); }
+    try { const r = PE.id ? await apiM("PATCH", `/api/projects/${PE.id}`, body) : await api("/api/projects", body); toast(PE.id ? "Saved" : r.message); d.close(); S = strip(await api("/api/state")); render(); }
     catch (e) { $("#perr").textContent = e.message; t.disabled = false; }
   }
 }
@@ -1669,7 +1742,7 @@ async function organizeDone(skip) {
     if (!skip && g === "project" && orgFolders?.size) { const r = await api("/api/projects/from-folders", { folders: [...orgFolders] }); toast(r.message); }
   } catch (e) { return toast(e.message, true); }
   store.set("loft.organized", "1"); groupBy = g; store.set("loft.groupBy", g); orgPick = null; orgFolders = null;
-  S = await api("/api/state"); setSel(null);
+  S = strip(await api("/api/state")); setSel(null);
 }
 
 /* ---------- account switch ---------- */
@@ -1808,6 +1881,165 @@ $("#phoneDlg").addEventListener("click", async e => {
 $("#phoneDlg").addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") { const t = e.target.closest("[data-phone-toggle]"); if (t) { e.preventDefault(); t.click(); } } e.stopPropagation(); });
 $("#phoneDlg").addEventListener("close", () => { pairing = null; });
 
+
+/* ---------- archive all done ---------- */
+let archArm = null;   // {key, t}: first click arms, a second one within 4 s archives
+function archAllBtn(list, cls = "") {
+  const ids = list.filter(c => c.kind === "agent").map(c => c.id); if (!ids.length) return "";
+  const armed = archArm && archArm.key === ids.join(",");
+  return `<button class="${cls}${armed ? " arm" : ""}" data-archdone="${esc(ids.join(","))}" title="Archive every finished agent shown here (never deletes: they move to ~/.claude/jobs-archive)">${armed ? `Archive ${ids.length}? Click again` : "Archive all"}</button>`;
+}
+async function archiveAll(t) {
+  const key = t.dataset.archdone;
+  if (!archArm || archArm.key !== key) { clearTimeout(archArm?.t); archArm = { key, t: setTimeout(() => { archArm = null; renderInbox(); renderBoard(); }, 4000) }; renderInbox(); renderBoard(); return; }
+  clearTimeout(archArm.t); archArm = null;
+  try { const r = await api("/api/bulk", { action: "archive", ids: key.split(",") }); toast(r.count ? `${r.message} · in ~/.claude/jobs-archive if you need one back` : r.message); if (r.ids.includes(sel)) setSel(null); }
+  catch (e) { toast(e.message, true); }
+  try { apply(await api("/api/state")); } catch {}
+}
+
+/* ---------- rename / describe ---------- */
+function openRename(id) {
+  const c = cardOf(id); if (!c) return; closeMenu(); const d = $("#renDlg");
+  d.innerHTML = `<div class="sh-h"><h2 id="renTitle">Rename</h2><button class="ibtn" data-rclose aria-label="Close"><i data-lucide="x" class="ic"></i></button></div>
+    <div class="sh-b"><div class="fld"><label class="label" for="rtitle">Title</label><input type="text" id="rtitle" value="${esc(c.name)}" maxlength="120" spellcheck="false"></div>
+      <div class="fld"><label class="label" for="rsum">What it's for</label><textarea id="rsum" rows="3" maxlength="300" placeholder="One short sentence">${esc(c.summary || "")}</textarea><span class="mini" style="color:var(--t3)">Shown under the title everywhere, on the phone too.</span></div>
+      <div class="err" id="rerr"></div></div>
+    <div class="sh-f"><button class="btn quiet" data-rdescribe title="Write both again from its first prompt"><i data-lucide="wand-sparkles" class="ic"></i>Describe again</button><span class="sp"></span><button class="btn quiet" data-rclose>Cancel</button><button class="btn primary" data-rsave>Save</button></div>`;
+  d.dataset.id = id; icons(); if (!d.open) d.showModal(); setTimeout(() => $("#rtitle")?.select(), 0);
+}
+async function saveRename() {
+  const d = $("#renDlg"), title = $("#rtitle").value.trim(), summary = $("#rsum").value.trim();
+  if (!title) { $("#rerr").textContent = "A title can't be empty."; return; }
+  try { await api(`/api/cards/${d.dataset.id}/rename`, { title, summary }); d.close(); toast("Saved"); apply(await api("/api/state")); }
+  catch (e) { $("#rerr").textContent = e.message; }
+}
+async function describeAgain(id) {
+  closeMenu(); toast("Writing a title and summary…");
+  try { const r = await api(`/api/cards/${id}/describe`, {}); toast(r.title); apply(await api("/api/state")); if ($("#renDlg").open && $("#renDlg").dataset.id === id) { $("#rtitle").value = r.title; $("#rsum").value = r.summary || ""; } }
+  catch (e) { toast(e.message, true); }
+}
+$("#renDlg").addEventListener("click", e => { const t = e.target.closest("button"); if (e.target === $("#renDlg") || t?.hasAttribute("data-rclose")) return $("#renDlg").close(); if (t?.hasAttribute("data-rsave")) return saveRename(); if (t?.hasAttribute("data-rdescribe")) return describeAgain($("#renDlg").dataset.id); });
+$("#renDlg").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && (e.target.id === "rtitle" || e.target.id === "rsum")) { e.preventDefault(); saveRename(); } e.stopPropagation(); });
+
+/* ---------- the Loft Assistant ---------- */
+// One long-lived session that operates Loft (POST /api/assistant). Its card is hidden from the
+// lists; the conversation is read with the chat API (/api/cards/<id>/messages).
+const AS = { id: null, card: null, items: [], cursor: 0, session: null, timer: null, local: [], waiting: false, working: false, pending: null, shape: null };
+const AS_CHIPS = [["Archive everything that's done", true], ["Stop all running agents", true], ["What needs me?", true], ["Start a task…", false]];
+function strip(s) { const a = (s.cards || []).find(c => c.assistant); AS.card = a || null; if (a && !AS.id) AS.id = a.id; return { ...s, cards: (s.cards || []).filter(c => !c.assistant) }; }
+function md(src) {   // small, safe markdown: fences, headings, lists, tables, inline code, bold, italics, links
+  const inline = t => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>").replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const out = [], lines = String(src || "").replace(/\r/g, "").split("\n");
+  const block = /^(```|#{1,3}\s|\s*([-*+]|\d+[.)])\s|\|)/;
+  for (let i = 0; i < lines.length;) {
+    const l = lines[i];
+    if (/^```/.test(l)) { const buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]); i++; out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`); continue; }
+    const h = /^(#{1,3})\s+(.*)/.exec(l); if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+    if (/^\s*([-*+]|\d+[.)])\s+/.test(l)) { const ol = /^\s*\d/.test(l), items = [];
+      while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*+]|\d+[.)])\s+/, ""));
+      out.push(`<${ol ? "ol" : "ul"}>${items.map(x => `<li>${inline(x)}</li>`).join("")}</${ol ? "ol" : "ul"}>`); continue; }
+    if (/^\|.*\|\s*$/.test(l)) { const rows = []; while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++]);
+      const cells = r => r.trim().slice(1, -1).split("|").map(x => x.trim()); const body = rows.filter(r => !/^\|[\s:|-]+\|\s*$/.test(r));
+      out.push(`<table>${body.map((r, n) => `<tr>${cells(r).map(x => n ? `<td>${inline(x)}</td>` : `<th>${inline(x)}</th>`).join("")}</tr>`).join("")}</table>`); continue; }
+    if (!l.trim()) { i++; continue; }
+    const para = [lines[i++]]; while (i < lines.length && lines[i].trim() && !block.test(lines[i])) para.push(lines[i++]);
+    out.push(`<p>${para.map(inline).join("<br>")}</p>`);
+  }
+  return out.join("");
+}
+function asStop() { clearTimeout(AS.timer); AS.timer = null; }
+function asResetLocal(id) { AS.id = id; AS.items = []; AS.cursor = 0; AS.session = null; AS.pending = null; }
+async function asInfo() { try { const r = await api("/api/assistant"); if (r.id !== AS.id) asResetLocal(r.id); AS.card = r.card; AS.working = r.running; } catch (e) { toast(e.message, true); } }
+async function asPoll(full) {
+  if (sel !== "assistant") return asStop();
+  clearTimeout(AS.timer);
+  if (AS.id) {
+    try {
+      const q = full || !AS.session ? "limit=120" : `after=${AS.cursor}&session=${encodeURIComponent(AS.session)}`;
+      const r = await api(`/api/cards/${AS.id}/messages?${q}`);
+      AS.items = r.reset || full || !AS.session || r.session !== AS.session ? (r.items || []) : AS.items.concat(r.items || []);
+      AS.cursor = r.cursor ?? AS.cursor; AS.session = r.session ?? AS.session; AS.pending = r.pending; AS.working = !!r.working;
+      const seen = new Set(AS.items.filter(i => i.kind === "user").map(i => (i.text || "").trim()));
+      AS.local = AS.local.filter(t => !seen.has(t.trim()));
+      if (!AS.local.length && !r.working && AS.items.length) AS.waiting = false;
+    } catch (e) { if (/not found/i.test(e.message)) asResetLocal(null); }
+  }
+  asRender();
+  if (sel === "assistant") AS.timer = setTimeout(() => asPoll(), AS.waiting || AS.working ? 1200 : 4000);
+}
+function asThread() {
+  const out = []; let tools = null;
+  const flush = () => { if (tools) { const n = tools.length, bad = tools.filter(t => t.bad).length;
+    out.push(`<details class="as-tools"><summary><i data-lucide="terminal" class="ic"></i>Ran ${n} Loft command${n > 1 ? "s" : ""}${bad ? ` · ${bad} failed` : ""}<i data-lucide="chevron-right" class="ic chev"></i></summary><ol>${tools.map(t => `<li class="${t.bad ? "bad" : ""}">${esc(t.text)}</li>`).join("")}</ol></details>`); tools = null; } };
+  const loftBin = /\S*\/bin\/loft\b/g;
+  for (const it of AS.items) {
+    if (it.kind === "tool") { (tools ||= []).push({ id: it.tool, text: (it.detail || it.title || it.name || "").replace(loftBin, "loft") }); continue; }
+    if (it.kind === "result") { const t = tools?.find(x => x.id === it.for); if (t && it.ok === false) t.bad = true; continue; }
+    flush();
+    if (it.kind === "user") out.push(`<div class="as-u">${esc(it.text)}</div>`);
+    else if (it.kind === "assistant") out.push(`<div class="as-a">${md(it.text)}</div>`);
+    else if (it.kind === "note") out.push(`<div class="as-note">${esc(it.text)}</div>`);
+  }
+  flush();
+  for (const t of AS.local) out.push(`<div class="as-u sending">${esc(t)}</div>`);
+  const p = AS.pending, pr = p?.prompt, qq = p?.question?.questions?.[0];
+  if (pr?.options?.length) out.push(`<div class="as-ask"><div class="q">${esc(pr.action || pr.title)}</div><div class="opts">${pr.options.map(o => `<button class="btn secondary" data-asperm="${o.n}" data-astool="${esc(pr.tool)}">${esc(o.label)}</button>`).join("")}</div></div>`);
+  else if (qq?.options?.length) out.push(`<div class="as-ask"><div class="q">${esc(qq.question)}</div><div class="opts">${qq.options.map((o, i) => `<button class="btn secondary" data-aschoice="${i}" data-astool="${esc(p.question.tool)}" title="${esc(o.description || "")}">${esc(o.label)}</button>`).join("")}</div></div>`);
+  else if (AS.waiting || AS.working) out.push(`<div class="as-typing" role="status" aria-label="Working"><i></i><i></i><i></i></div>`);
+  return out.join("");
+}
+const asComposer = () => `<div class="as-foot"><div class="as-box"><textarea id="atext" rows="1" placeholder="Ask Loft to do something…" aria-label="Message the assistant">${esc(drafts.asst || "")}</textarea>${micBtn("atext")}<button class="send" data-assend aria-label="Send" title="Send (Enter)"><i data-lucide="arrow-up" class="ic"></i></button></div>`;
+function paneAssist(p) {
+  AS.shape = null; p.innerHTML = `<div class="as" id="asRoot"></div>`;
+  asRender(true); asInfo().then(() => asPoll(true));
+}
+function asRender(force) {
+  const root = $("#asRoot"); if (!root) return;
+  const empty = !AS.items.length && !AS.local.length && !AS.waiting, shape = empty ? "empty" : "chat";
+  if (force || AS.shape !== shape) {
+    AS.shape = shape; const had = document.activeElement?.id === "atext";
+    const head = `<div class="as-h"><div class="nm"><i data-lucide="sparkles" class="ic"></i>Assistant<small>${esc(accById(AS.card?.account || S.defaultAccount)?.label || "")}</small></div>
+      ${!empty ? `<button class="btn quiet" data-asreset title="Archive this conversation and start over"><i data-lucide="square-pen" class="ic"></i>New conversation</button>` : ""}<button class="ibtn" data-back aria-label="Close" title="Close (Esc)"><i data-lucide="x" class="ic"></i></button></div>`;
+    root.innerHTML = empty
+      ? `${head}<div class="as-empty"><h2 class="as-hello">What should Loft do?</h2>${asComposer()}<div class="as-chips">${AS_CHIPS.map(([l, go]) => `<button data-aschip="${esc(l)}" data-go-now="${go ? 1 : ""}">${esc(l)}</button>`).join("")}</div><div class="as-hint">It starts, stops, archives and replies to your agents for you. Enter sends.</div></div></div>`
+      : `${head}<div class="as-scroll" id="asScroll"><div class="as-col" id="asCol"></div></div>${asComposer()}<div class="as-hint">Enter sends · Shift+Enter new line${S.voice ? " · V to speak" : ""}</div></div>`;
+    icons(); grow($("#atext")); if (had || force) setTimeout(() => $("#atext")?.focus(), 0);
+  }
+  const col = $("#asCol"); if (!col) return;
+  const h = asThread(); if (col.dataset.h === h) return;
+  const sc = $("#asScroll"), first = !col.dataset.h, atEnd = first || sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
+  const open = [...col.querySelectorAll("details")].map(d => d.open);
+  col.dataset.h = h; col.innerHTML = h; icons();
+  col.querySelectorAll("details").forEach((d, i) => { if (open[i]) d.open = true; });
+  if (atEnd) sc.scrollTop = sc.scrollHeight;
+}
+async function asSend(text) {
+  const box = $("#atext"); text = (text ?? box?.value ?? "").trim(); if (!text) return;
+  drafts.asst = ""; if (box) { box.value = ""; grow(box); }
+  AS.local.push(text); AS.waiting = true; asRender();
+  try {
+    const r = await api("/api/assistant", { message: text });
+    if (r.id && r.id !== AS.id) asResetLocal(r.id);
+    if (/^Queued/.test(r.message)) toast(r.message);
+  } catch (e) {
+    AS.local = AS.local.filter(t => t !== text); AS.waiting = false; drafts.asst = text; toast(e.message, true); asRender();
+    const b = $("#atext"); if (b) { b.value = text; grow(b); } return;
+  }
+  asPoll();
+}
+async function asReset() {
+  try { const r = await api("/api/assistant/reset", {}); toast(r.message); } catch (e) { return toast(e.message, true); }
+  asResetLocal(null); AS.local = []; AS.waiting = false; AS.working = false; asRender(true);
+}
+async function asAnswer(t) {
+  const body = t.dataset.asperm ? { tool: t.dataset.astool, permission: +t.dataset.asperm } : { tool: t.dataset.astool, answers: [{ choice: +t.dataset.aschoice }] };
+  t.disabled = true;
+  try { const r = await api(`/api/cards/${AS.id}/answer`, body); if (!r.confirmed) toast(r.message); } catch (e) { toast(e.message, true); }
+  AS.waiting = true; asPoll();
+}
+
 /* ---------- events ---------- */
 document.addEventListener("click", async e => {
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
@@ -1822,6 +2054,14 @@ document.addEventListener("click", async e => {
   if (t.dataset.agentbr) { e.stopPropagation(); brView[t.dataset.agentbr] = true; if (sel === t.dataset.agentbr) { $("#pane").dataset.key = ""; return render(); } return setSel(t.dataset.agentbr); }
   if (t.hasAttribute("data-sites")) return go("browser");
   if (t.dataset.sw || t.dataset.sacc || t.dataset.site || t.dataset.ssave || t.dataset.sdel) return sitesClick(t);
+  if (t.dataset.archdone) { e.stopPropagation(); return archiveAll(t); }
+  if (t.hasAttribute("data-assist")) return setSel(sel === "assistant" ? null : "assistant");
+  if (t.hasAttribute("data-assend")) return asSend();
+  if (t.dataset.aschip) { if (t.dataset.goNow) return asSend(t.dataset.aschip); const b = $("#atext"); b.value = "Start a task in "; grow(b); b.focus(); return; }
+  if (t.hasAttribute("data-asreset")) return asReset();
+  if (t.dataset.asperm || t.dataset.aschoice) return asAnswer(t);
+  if (t.hasAttribute("data-rename")) return openRename(sel);
+  if (t.hasAttribute("data-describe")) return describeAgain(sel);
   if (t.matches(".item, .bcard")) return setSel(t.dataset.id);
   if (t.hasAttribute("data-settings")) return $("#menu").hidden || $("#menu").dataset.for !== "settings" ? openSettings(t) : closeMenu();
   if (t.dataset.go) return go(t.dataset.go);
@@ -1829,7 +2069,7 @@ document.addEventListener("click", async e => {
   if (t.dataset.group) { closeMenu(); return setGroup(t.dataset.group); }
   if (t.dataset.fkey !== undefined) { closeMenu(); const g = gb(); if (t.dataset.fkey === "*") delete fsel[g]; else fsel[g] = t.dataset.fkey; store.set("loft.fsel", JSON.stringify(fsel)); return render(); }
   if (t.dataset.lane) { const k = t.dataset.lane; lanesShut.has(k) ? lanesShut.delete(k) : lanesShut.add(k); store.set("loft.lanes", JSON.stringify([...lanesShut])); return renderBoard(); }
-  if (t.dataset.proj !== undefined) { closeMenu(); const r = await act(sel, "project", { project: t.dataset.proj || null }); if (r) { S = await api("/api/state"); $("#pane").dataset.key = ""; render(); } return; }
+  if (t.dataset.proj !== undefined) { closeMenu(); const r = await act(sel, "project", { project: t.dataset.proj || null }); if (r) { S = strip(await api("/api/state")); $("#pane").dataset.key = ""; render(); } return; }
   if (t.hasAttribute("data-pnew")) return openProject(null);
   if (t.dataset.pedit) return openProject(t.dataset.pedit);
   if (t.dataset.org) { orgPick = t.dataset.org; $("#pane").dataset.key = ""; return renderPane(); }
@@ -1871,6 +2111,7 @@ document.addEventListener("input", e => {
   if (e.target.id === "ndir") drafts.dir = e.target.value;
   if (e.target.id === "reply") { drafts[sel] = e.target.value; grow(e.target); }
   if (e.target.id === "nprompt") drafts.new = e.target.value;
+  if (e.target.id === "atext") { drafts.asst = e.target.value; grow(e.target); }
 });
 document.addEventListener("focusout", e => {
   if (e.target.dataset?.rename) { const a = AC?.accounts.find(x => x.id === e.target.dataset.rename), v = e.target.value.trim(); if (a && v && v !== a.label) accAct(a.id, "rename", { label: v }); else if (a) e.target.value = a.label; return; }
@@ -1884,6 +2125,7 @@ document.addEventListener("keydown", e => {
   const typing = /INPUT|TEXTAREA/.test(ae?.tagName);
   if (ae?.id === "reply" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return sendReply(); }
   if (ae?.id === "qtext" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return queuePrompt(); }
+  if (ae?.id === "atext" && e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); return asSend(); }
   if (ae?.id === "nprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return submitNew(true); }
   if (ae?.id === "tprompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return $("[data-start]")?.click(); }
   if (ae?.id === "title" && e.key === "Enter") return ae.blur();
@@ -1891,17 +2133,18 @@ document.addEventListener("keydown", e => {
   if (ae?.id === "aname" && e.key === "Enter") return $("[data-addgo]")?.click();
   if ((ae?.id === "sname" || ae?.id === "surl") && e.key === "Enter") { e.preventDefault(); return $('[data-sw="addgo"]')?.click(); }
   if (ae?.dataset?.sfield && e.key === "Enter") { e.preventDefault(); return ae.closest(".sform")?.querySelector("[data-ssave]")?.click(); }
-  if (e.key === "Escape") { if (!$("#menu").hidden) return closeMenu(); if (rec?.state === "recording") return rec.stop(); if (typing && ae.id !== "reply") return ae.blur();
+  if (e.key === "Escape") { if (!$("#menu").hidden) return closeMenu(); if (rec?.state === "recording") return rec.stop(); if (typing && ae.id !== "reply" && !(ae.id === "atext" && !ae.value)) return ae.blur();
     if (sel === "setup") return;
-    if (sel === "new" || sel === "accounts" || sel === "projects" || sel === "browser" || (view === "board" && sel)) { if (sel === "accounts") { loginFor = null; loginEnded = false; adding = false; } const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
+    if (sel === "new" || sel === "accounts" || sel === "projects" || sel === "browser" || sel === "assistant" || (view === "board" && sel)) { if (sel === "accounts") { loginFor = null; loginEnded = false; adding = false; } const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
   if (ae?.matches?.("#cols .bcard") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); return setSel(ae.dataset.id); }
   // V speaks — also while the reply box is empty and focused
-  if ((e.key === "v" || e.key === "V") && !e.ctrlKey && !e.metaKey && !e.altKey && (!typing || (ae.id === "reply" && !ae.value) || (ae.id === "nprompt" && !ae.value))) { const tg = voiceTarget(); if (tg) { e.preventDefault(); return toggleVoice(tg); } }
+  if ((e.key === "v" || e.key === "V") && !e.ctrlKey && !e.metaKey && !e.altKey && (!typing || (ae.id === "reply" && !ae.value) || (ae.id === "nprompt" && !ae.value) || (ae.id === "atext" && !ae.value))) { const tg = voiceTarget(); if (tg) { e.preventDefault(); return toggleVoice(tg); } }
   if (typing && !((ae.id === "reply" || ae.id === "nprompt") && !ae.value)) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "n" && sel !== "setup") { e.preventDefault(); setSel("new"); }
   else if (e.key === "," && sel !== "setup") { e.preventDefault(); AC = null; setSel("accounts"); }
   else if (e.key === "b") { e.preventDefault(); setView(view === "board" ? "inbox" : "board"); }
+  else if (e.key === "a" && !typing && sel !== "setup") { e.preventDefault(); setSel(sel === "assistant" ? null : "assistant"); }
   else if (e.key === "g" && sel !== "setup") { e.preventDefault(); cycleGroup(); }
   else if (e.key === "p" && sel !== "setup") { e.preventDefault(); go("projects"); }
   else if (view === "board" && /^[jkhls]$|^Arrow/.test(e.key)) {
@@ -1959,7 +2202,7 @@ async function swipeEnd() {
 document.addEventListener("dragend", () => { if (!dragId) return; dragId = null; clearDrop(); if (boardStale) renderBoard(); });
 
 /* ---------- live data ---------- */
-function apply(s) { S = s; loaded = true; notifyNew(); render(); }
+function apply(s) { S = strip(s); loaded = true; notifyNew(); render(); }
 api("/api/state").then(apply).catch(e => toast(e.message, true));
 if (!new URL(location.href).searchParams.has("nosse")) { const es = new EventSource(`/api/events?t=${TOKEN}`); es.onmessage = m => apply(JSON.parse(m.data)); es.onerror = () => { if (es.readyState === EventSource.CLOSED) waitForLoft(); }; }
 phoneLoad();
