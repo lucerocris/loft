@@ -53,7 +53,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, board as B, browser as BR, core as C, paths, projects as P, prompts as PR, sites as ST, transcript as TR, usage as U, webapi  # noqa: E402
+from loft import accounts as A, assistant as AS, board as B, browser as BR, core as C, paths, projects as P, prompts as PR, sites as ST, titles as TI, transcript as TR, usage as U, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -407,90 +407,15 @@ class Phone:
         return cls.status()
 
 
-def derive_title(prompt):
-    """A short card title from the first clause of the prompt."""
-    import re
-    first = re.split(r"(?<=[.!?\n])\s", prompt.strip(), maxsplit=1)[0].strip().rstrip(".!?")
-    first = re.sub(r"^(please|can you|could you|i want you to|go and)\s+", "", first, flags=re.I)
-    words = first.split()
-    title = " ".join(words[:7]) + ("…" if len(words) > 7 else "")
-    return title[:1].upper() + title[1:]
+derive_title = TI.derive_title   # a short title from the prompt (the fallback; see loft/titles.py)
 
 
-def _attached(card, steps=(), idle=0.8, read_after=0.8):
-    """Attach to a background agent in a hidden pty, wait for the screen to
-    settle, write each step (a string of keys; "\x00SLEEP:<s>" pauses), and
-    detach. The session keeps running, exactly as after `claude attach`.
-    Returns the raw bytes the attach printed (for reading a prompt off it)."""
-    env = B.account_env(card)
-    env.update(TERM="xterm-256color", COLORTERM="truecolor")
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.chdir(str(HOME))
-        os.execvpe(CLAUDE, [CLAUDE, "attach", card["id"]], env)
-    out = bytearray()
-    try:
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 160, 0, 0))
-
-        def drain(idle, limit):
-            got, start, last = 0, time.time(), time.time()
-            while time.time() - start < limit:
-                r, _, _ = select.select([fd], [], [], 0.1)
-                if r:
-                    try:
-                        chunk = os.read(fd, 65536)
-                    except OSError:
-                        return got
-                    if not chunk:
-                        return got
-                    got += len(chunk); last = time.time(); out.extend(chunk)
-                elif got and time.time() - last > idle:
-                    return got
-            return got
-
-        # the first paint lands within ~1.5 s; a spinner may keep it from going idle
-        if not drain(idle, 3.5) and not drain(idle, 8):
-            raise RuntimeError("Couldn't open the agent's session.")
-        for st in steps:
-            if st.startswith("\x00SLEEP:"):
-                drain(9, float(st[7:])); continue
-            os.write(fd, st.encode())
-            drain(0.35, 1.2)
-        if steps:
-            drain(read_after, 3)
-    finally:
-        try:
-            os.kill(pid, signal.SIGHUP)
-        except OSError:
-            pass
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        for _ in range(20):
-            try:
-                if os.waitpid(pid, os.WNOHANG)[0]:
-                    break
-            except ChildProcessError:
-                break
-            time.sleep(0.05)
-        else:
-            try:
-                os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
-            except OSError:
-                pass
-    return bytes(out)
+def log(m):
+    print(m, flush=True)
 
 
-def send_to_agent(card, text):
-    """Type text into a background agent's prompt and press Enter.
-
-    There is no `claude send`, so this attaches briefly in a hidden pty, pastes
-    the text (bracketed paste, so multi-line stays one message), presses Enter
-    and detaches. Not for pickers: Enter there picks the highlighted row (see
-    answer_route, which drives them with keys)."""
-    _attached(card, ["\x1b[200~" + text + "\x1b[201~", "\x00SLEEP:0.4", "\r"], idle=1.2)
-    return "Sent"
+# Attaching to an agent in a hidden pty: loft/agentio.py (the `loft reply` CLI uses it too).
+from loft.agentio import _attached, send_to_agent  # noqa: E402
 
 
 # ------------------------------------------------------------------ pickers
@@ -656,7 +581,7 @@ def snapshot():
         pcfg = P.load()
     except SystemExit:
         pcfg = P.empty()
-    counts = P.count(cards)
+    counts = P.count([c for c in cards if not c.get("assistant")])
     cfg = A.load()
     cfg["accounts"] = [a for a in cfg["accounts"] if not a.get("pending")]  # still signing in
     usage = {}  # keyed by account id; "five"/"seven" stay strings ("—" = unknown) as before
@@ -812,6 +737,7 @@ def run_queue():
                 if not jid:
                     raise RuntimeError(msg)
                 print(f"queue: started todo {x['id']} as {jid}", flush=True)
+                TI.after_launch(jid, x, log=log)
         except Exception as e:
             print(f"queue: {kind} {x['id']} failed: {e}", flush=True)
             with LOCK:
@@ -869,33 +795,13 @@ def queued_msg(until, n=1):
 def act(cid, action, body):
     """Run one card action. Returns (status, message)."""
     if action == "create":
-        proj = None
-        if body.get("project"):
-            proj = P.get(body["project"])
-            if not proj:
-                return 400, "That project is gone. Pick another one."
-        cwd = (body.get("cwd") or "").strip() or (proj["folders"][0] if proj and proj["folders"] else "")
-        title = (body.get("title") or "").strip() or derive_title(body.get("prompt") or "")
-        if not title:
-            return 400, "Write what the agent should do."
-        if not cwd or not os.path.isdir(os.path.expanduser(cwd)):
-            return 400, "Pick a project folder that exists."
-        if os.path.realpath(os.path.expanduser(cwd)) == str(HOME):
-            return 400, "Pick a project folder: Claude won't start background agents in your home folder."
-        acc = new_task_account(body.get("account") or None, proj)
-        todo = {"id": "t" + secrets.token_hex(4), "title": title,
-                "account": acc["id"],
-                "cwd": cwd.replace(str(HOME), "~"), "prompt": (body.get("prompt") or "").strip(),
-                "created": B.now_utc().isoformat()}
-        if proj:
-            todo["project"] = proj["id"]
-        if body.get("start"):
-            if not todo["prompt"]:
-                return 400, "Write a prompt to start it with."
-            jid, msg = B.launch_todo(todo)
-            return (200, msg) if jid else (500, msg)
-        todos = B.load_todos(); todos.append(todo); B.save_todos(todos)
-        return 200, "Added to Todo"
+        code, msg, jid, todo = B.create_task(body.get("prompt"), body.get("cwd"), body.get("account") or None,
+                                             body.get("project") or None, body.get("title") or "", bool(body.get("start")))
+        if code == 200 and jid:
+            TI.after_launch(jid, todo, log=log)          # title + summary arrive in a few seconds
+        elif code == 200 and todo:
+            TI.describe_async({**todo, "kind": "todo", "name": todo["title"]}, log=log)
+        return code, msg
 
     card = find_card(cid)
     if not card:
@@ -925,12 +831,17 @@ def act(cid, action, body):
         if not jid:
             return 500, msg
         B.save_todos([t for t in B.load_todos() if t["id"] != cid])
+        TI.after_launch(jid, todo, log=log)
         return 200, msg
-    if action == "rename":
-        name = (body.get("name") or "").strip()
-        if not name:
-            return 400, "A name can't be empty."
-        return 200, B.act_rename(card, name)
+    if action == "rename":   # {title?, summary?} (or the older {name})
+        name = body.get("title", body.get("name"))
+        summary = body.get("summary")
+        if name is not None and not str(name).strip():
+            return 400, "A title can't be empty."
+        if name is None and summary is None:
+            return 400, "Send a title or a summary."
+        return 200, B.act_rename(card, (str(name).strip()[:120] if name is not None else None),
+                                 None if summary is None else " ".join(str(summary).split())[:300])
     if action == "account":
         return switch_route(card, body)
     if action == "project":
@@ -1187,6 +1098,55 @@ def sites_route(method, parts, body, remote=False):
     return 404, {"message": "Not found."}
 
 
+# ------------------------------------------------------------------ titles, bulk, assistant
+def describe_route(cid, body):
+    """POST /api/cards/<id>/describe {keepTitle?}: a fresh title + summary from the first prompt."""
+    card = find_card(cid)
+    if not card:
+        return 404, {"message": "That card is gone (archived or finished elsewhere)."}
+    keep = body.get("keepTitle")
+    r = TI.describe(card, keep_title=None if keep is None else bool(keep))
+    if not r["ok"]:
+        return 502, {"message": "Couldn't write a title right now (the model didn't answer). Try again in a bit.",
+                     "title": r["title"], "summary": r["summary"]}
+    return 200, {"title": r["title"], "summary": r["summary"], "message": "Described"}
+
+
+def bulk_route(body):
+    """POST /api/bulk {action: archive|stop, filter: done|idle|all, ids?: [..]} -> {message, count, ids}."""
+    action, filt, ids = body.get("action"), body.get("filter") or "done", body.get("ids")
+    if action not in ("archive", "stop"):
+        return 400, {"message": "action is archive or stop."}
+    if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, str) for i in ids)):
+        return 400, {"message": "ids is a list of card ids."}
+    if not ids and filt not in B.BULK_FILTERS:
+        return 400, {"message": "filter is done, idle or all."}
+    with LOCK:
+        r = B.bulk(action, filt, ids or None)
+    return 200, r
+
+
+def assistant_route(method, parts, body):
+    """GET/POST /api/assistant, POST /api/assistant/reset."""
+    if parts == ["api", "assistant"] and method == "GET":
+        return 200, AS.info()
+    if parts == ["api", "assistant"] and method == "POST":
+        with LOCK:
+            c = AS.card()
+            fresh = c is None
+        if fresh:   # starting takes a few seconds; one start at a time
+            with AS_START:
+                return AS.send(body.get("message"), send_to_agent)
+        return AS.send(body.get("message"), send_to_agent)
+    if parts == ["api", "assistant", "reset"] and method == "POST":
+        with LOCK:
+            return AS.reset()
+    return 404, {"message": "not found"}
+
+
+AS_START = threading.Lock()
+
+
 class H(BaseHTTPRequestHandler):
     server_version = "cagents"
 
@@ -1300,6 +1260,8 @@ class H(BaseHTTPRequestHandler):
             return self.voice_ws()
         if path == "/api/state":
             return self._send(200, snapshot())
+        if path == "/api/assistant":
+            return self._send(*assistant_route("GET", ["api", "assistant"], {}))
         if path == "/api/fs":   # folder picker; the paired phone too (folder names only, home only)
             return self._send(*fs_list(urlparse(self.path).query))
         if path.startswith("/api/timeline/"):
@@ -1856,9 +1818,27 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
             return self._send(code, payload)
+        if parts == ["api", "bulk"]:
+            try:
+                code, payload = bulk_route(body)
+            except Exception as e:
+                code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
+            return self._send(code, payload)
+        if parts[:2] == ["api", "assistant"]:
+            try:
+                code, payload = assistant_route("POST", parts, body)
+            except Exception as e:
+                code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
+            return self._send(code, payload)
         if parts[:2] != ["api", "cards"]:
             return self._send(404, {"error": "not found"})
         cid, action = (None, "create") if len(parts) == 2 else (parts[2], parts[3] if len(parts) > 3 else "")
+        if action == "describe":   # a model call (a few seconds): outside the lock
+            try:
+                code, payload = describe_route(cid, body)
+            except Exception as e:
+                code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
+            return self._send(code, payload)
         if action == "answer":
             with LOCK:
                 try:

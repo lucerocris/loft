@@ -7,7 +7,8 @@
   loft setup                first-run wizard: accounts, cswap import, open the app
   loft doctor               check claude, every account's login, the daemon, voice
 
-  loft list [--all]         grouped text list of agents (--json for machines)
+  loft list [--all]         grouped text list of agents (--json for machines: id, name,
+                            summary, account, bucket, detail, result, project, ...)
   loft watch [secs]         live text list
   loft attach <id|name>     open an agent with the account that owns it
   loft show <id|name>       full detail + result
@@ -18,6 +19,19 @@
   loft organize [--yes]     color by account, pin what needs you, give agents with
                             no saved login an explicit one
   loft migrate [--yes]      move agents started under `cswap run N` into ~/.claude/jobs
+
+  loft new "<prompt>" [--dir D] [--account A] [--project P] [--title T] [--todo]
+                            start an agent (--todo: save it to Todo instead). The title
+                            and summary are written for you unless --title is given
+  loft reply <id|name> "<message>"
+                            send a message to an agent (queued while it works)
+  loft archive <id|name>... | --done | --idle | --all
+                            archive agents (never deletes; ~/.claude/jobs-archive)
+  loft stop <id|name>... | --all | --idle | --done
+                            stop agents' workers (their sessions are kept)
+  loft rename <id|name> [--title T] [--summary S]
+  loft describe <id|name> [--keep-title] | --missing
+                            write a title + one-line summary from the first prompt
 
   loft account list
   loft account add [name] [--email E] [--color C] [--dry-run]
@@ -573,6 +587,134 @@ def cmd_switch(argv):
     return 0 if r["ok"] else 1
 
 
+# ------------------------------------------------------------------ tasks: new, reply, bulk, titles
+
+def _cards():
+    """Every agent and todo except the Loft Assistant's own session."""
+    from . import board as B
+    return [c for c in B.load_cards(True) if not c.get("assistant")]
+
+
+def cmd_new(argv):
+    from . import board as B, titles as TI
+    rest = list(argv)
+    d, acct, proj, title = flag(rest, "--dir"), flag(rest, "--account"), flag(rest, "--project"), flag(rest, "--title")
+    todo_only = "--todo" in rest
+    rest = [a for a in rest if a != "--todo"]
+    if any(a.startswith("--") for a in rest):
+        raise SystemExit(f"unknown option {next(a for a in rest if a.startswith('--'))}")
+    prompt = " ".join(rest).strip()
+    if not prompt:
+        raise SystemExit('usage: loft new "<prompt>" [--dir D] [--account A] [--project P] [--title T] [--todo]')
+    acc_id = find_account(acct, A.load())["id"] if acct and acct != "auto" else acct
+    pid = None
+    if proj:
+        p = P.find(proj)
+        if not p:
+            raise SystemExit(f"no project {proj!r}")
+        pid = p["id"]
+    if d:
+        d = str(Path(os.path.expanduser(d)).resolve())
+    code, msg, jid, todo = B.create_task(prompt, d or "", acc_id, pid, title or "", start=not todo_only)
+    if code != 200:
+        raise SystemExit(msg)
+    if jid:
+        try:
+            C.meta_write(jid, title=todo["title"], titleSource=todo["titleSource"])
+        except OSError:
+            pass
+        _describe_later(jid, keep=bool(title))
+        say(f"{msg} · {todo['title']}")
+    else:
+        _describe_later(todo["id"], keep=bool(title))
+        say(f"{msg} ({todo['id']}) · {todo['title']}")
+    return 0
+
+
+def _describe_later(cid, keep):
+    """A detached `loft describe` so the title + summary land without making this command wait."""
+    try:
+        subprocess.Popen([sys.executable, str(paths.REPO / "bin" / "loft"), "describe", cid, "--quiet",
+                          *(["--keep-title"] if keep else [])], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True, cwd=str(paths.HOME))
+    except OSError:
+        pass
+
+
+def cmd_reply(argv):
+    from . import board as B
+    if len(argv) < 2:
+        raise SystemExit('usage: loft reply <id|name> "<message>"')
+    card = find_card(_cards(), argv[0])
+    text = " ".join(argv[1:]).strip()
+    if card["kind"] == "todo":
+        raise SystemExit(f"{card['name']} is a todo; start it first")
+    if B.busy(card) or B.queue_read(card["id"])["items"] or B.limit_until(card.get("account")) is not None:
+        n = B.queue_add(card["id"], text)
+        say(f"queued for {card['name']} ({n} waiting): Loft sends it when the agent is free")
+        if not server_up(DEFAULT_PORT):
+            say("note: Loft sends queued prompts; start it (`loft app` or `loft serve`)")
+        return 0
+    from . import agentio
+    agentio.send_to_agent(card, text)
+    say(f"sent to {card['name']}")
+    return 0
+
+
+def cmd_bulk(action, argv, show_all=False):
+    """loft archive|stop <id|name>... | --done | --idle | --all"""
+    from . import board as B
+    filt = "all" if show_all or "--all" in argv else "idle" if "--idle" in argv else "done" if "--done" in argv else None
+    names = [a for a in argv if not a.startswith("--")]
+    if not names and not filt:
+        raise SystemExit(f"usage: loft {action} <id|name>... | --done | --idle | --all")
+    cards = _cards()
+    ids = [find_card(cards, q)["id"] for q in names] if names else None
+    r = B.bulk(action, filt or "done", ids, cards=B.load_cards(True))
+    say(r["message"])
+    for e in r["errors"]:
+        say(f"  {e['id']}  {e['name']}: {e['error']}")
+    return 0 if not r["errors"] else 1
+
+
+def cmd_rename(argv):
+    from . import board as B
+    rest = list(argv)
+    title, summary = flag(rest, "--title"), flag(rest, "--summary")
+    if not rest or (title is None and summary is None):
+        raise SystemExit('usage: loft rename <id|name> [--title "<title>"] [--summary "<summary>"]')
+    card = find_card(_cards(), " ".join(rest))
+    if title is not None and not title.strip():
+        raise SystemExit("a title can't be empty")
+    B.act_rename(card, title.strip() if title else None, summary)
+    say(f"{card['id']}  {title.strip() if title else card['name']}" + (f" — {summary}" if summary else ""))
+    return 0
+
+
+def cmd_describe(argv):
+    from . import titles as TI
+    quiet, keep = "--quiet" in argv, "--keep-title" in argv
+    rest = [a for a in argv if a not in ("--quiet", "--keep-title", "--missing")]
+    cards = _cards()
+    if "--missing" in argv:
+        todo = [c for c in cards if not c.get("summary")]
+    elif rest:
+        todo = [find_card(cards, " ".join(rest))]
+    else:
+        raise SystemExit("usage: loft describe <id|name> [--keep-title] | --missing")
+    if not todo:
+        say("every agent already has a summary"); return 0
+    import concurrent.futures as cf
+    bad = 0
+    with cf.ThreadPoolExecutor(max_workers=4) as pool:
+        for c, r in zip(todo, pool.map(lambda c: TI.describe(c, keep_title=True if keep else None), todo)):
+            bad += not r["ok"]
+            if not quiet:
+                say(f"{c['id']}  {r['title']}" + (f" — {r['summary']}" if r["summary"] else "") +
+                    ("" if r["ok"] else C.c(C.YEL, "  (the model didn't answer; unchanged)")))
+    return 1 if bad else 0
+
+
 # ------------------------------------------------------------------ projects
 
 def flags(argv, name):
@@ -737,6 +879,16 @@ def main(argv=None):
         return cmd_switch(rest)
     if cmd in ("project", "projects"):
         cmd_project(rest); return 0
+    if cmd == "new":
+        return cmd_new(rest)
+    if cmd == "reply":
+        return cmd_reply(rest)
+    if cmd in ("archive", "stop"):
+        return cmd_bulk(cmd, rest, show_all)
+    if cmd == "rename":
+        return cmd_rename(rest)
+    if cmd == "describe":
+        return cmd_describe(rest)
     if cmd == "view":
         if not rest or rest[0] not in P.GROUP_BY:
             raise SystemExit("usage: loft view " + "|".join(P.GROUP_BY))
@@ -749,8 +901,8 @@ def main(argv=None):
     elif cmd == "show":
         if not rest: raise SystemExit("usage: loft show <id|name>")
         j = C.find(C.load(), rest[0])
-        for k in ("id", "name", "account", "state", "project", "created", "updated"):
-            say(f"{C.c(C.DIM, k + ':'):<20} {j[k]}")
+        for k in ("id", "name", "summary", "account", "state", "project", "created", "updated"):
+            say(f"{C.c(C.DIM, k + ':'):<20} {j[k] or '-'}")
         say(f"\n{C.c(C.BOLD, 'detail')}\n{j['detail']}")
         if j["result"]: say(f"\n{C.c(C.BOLD, 'result')}\n{j['result']}")
         for l in j["links"]: say(C.c(C.CYN, l))
