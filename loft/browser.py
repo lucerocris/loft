@@ -6,7 +6,12 @@ flows as checks and replays them against an agent's dev server.
 
 Stdlib only: the CDP connection is a ~70-line WebSocket client.
 
-  record      <cache>/browsers/<jid>.json   {port, pid, profile, mcp}
+Chrome starts on first use, not with the agent: Loft listens on the agent's browser port and
+starts Chrome when the agent's first browser tool (or your Browser tab) connects, then pipes
+bytes through. A Chrome nobody has driven for LOFT_BROWSER_IDLE seconds (default 600) is closed;
+the next use starts it again on the same profile, so logins and cookies stay.
+
+  record      <cache>/browsers/<jid>.json   {port, cport, pid, profile, mcp}  (port: Loft's gate, cport: Chrome's)
   profile     <cache>/browsers/profile-*    deleted when the agent is archived
   checks      <config>/checks.json          {scope: [{id, name, steps}]}  (scope = project id or folder)
   results     <cache>/browsers/<jid>-checks.json
@@ -29,7 +34,9 @@ MAC_CHROME = ["Google Chrome.app/Contents/MacOS/Google Chrome", "Chromium.app/Co
               "Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "Brave Browser.app/Contents/MacOS/Brave Browser"]
 LINUX_CHROME = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"]
 WEB_MARKERS = ("package.json", "index.html")
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
+_SERVING = False   # this process runs janitor() (the Loft server)
+_PROCS = {}        # pid -> Popen of the Chromes this process started, so a closed one is reaped, not left a zombie
 
 
 def home():
@@ -185,6 +192,7 @@ def _spawn(port, profile):
                           "--no-first-run", "--no-default-browser-check", "--mute-audio", "--window-size=1280,800",
                           "about:blank"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
+    _PROCS[p.pid] = p
     for _ in range(100):
         if alive(port):
             return p.pid
@@ -205,22 +213,144 @@ def _write(jid, rec):
     (home() / f"{jid}.json").write_text(json.dumps(rec))
 
 
-def ensure(jid):
-    """The agent's browser, (re)started on its recorded port so its MCP endpoint stays valid."""
+def _chrome(jid):
+    """The agent's Chrome, started if it isn't running. Listens on rec["cport"], behind the gate."""
+    rec = record(jid) or {}
+    if rec.get("cport") and alive(rec["cport"]):   # no lock: a lock holder may be connecting through the gate
+        return rec
     with _LOCK:
         rec = record(jid) or {}
-        if rec.get("port") and alive(rec["port"]):
+        if rec.get("cport") and alive(rec["cport"]):
             return rec
-        port = rec.get("port") or free_port()
-        try:
-            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
-            port = free_port()          # something else took it
-        except OSError:
-            pass
-        rec = {**rec, "port": port, "profile": rec.get("profile") or str(home() / f"profile-{jid}")}
-        rec["pid"] = _spawn(port, rec["profile"])
+        cport = free_port()
+        rec = {**rec, "cport": cport, "profile": rec.get("profile") or str(home() / f"profile-{jid}")}
+        rec["pid"] = _spawn(cport, rec["profile"])
         _write(jid, rec)
         return rec
+
+
+def ensure(jid):
+    """The agent's browser, running. rec["port"] is the gate: the port everyone (agent, Loft) connects to."""
+    with _LOCK:
+        rec = record(jid) or {}
+        if not rec.get("port"):
+            rec = {**rec, "port": free_port()}
+            _write(jid, rec)
+    if not serve(jid) and not alive(rec["port"]):
+        raise RuntimeError("The browser's port is taken by another program.")
+    return _chrome(jid)
+
+
+# ------------------------------------------------------------------ gate: start on first use, close when idle
+IDLE = int(os.environ.get("LOFT_BROWSER_IDLE", "600"))
+_GATES = {}
+
+
+class Gate:
+    """Listens on the agent's browser port. Each connection starts Chrome if needed and is piped to it.
+    `last` is when a client last sent Chrome anything: page events (an idle dev server's HMR pings)
+    don't count, so a browser nobody drives can be closed."""
+
+    def __init__(self, jid, port):
+        self.jid, self.port, self.last = jid, port, time.time()
+        self.srv = socket.create_server(("127.0.0.1", port))
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self):
+        while True:
+            try:
+                c, _ = self.srv.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._pipe, args=(c,), daemon=True).start()
+
+    def _pipe(self, c):
+        self.last = time.time()
+        try:
+            up = socket.create_connection(("127.0.0.1", _chrome(self.jid)["cport"]))
+        except Exception:
+            return c.close()
+        t = threading.Thread(target=self._copy, args=(up, c, False), daemon=True)
+        t.start()
+        self._copy(c, up, True)
+        t.join()
+        for x in (c, up):
+            x.close()
+
+    def _copy(self, a, b, client):
+        try:
+            while d := a.recv(65536):
+                b.sendall(d)
+                if client:
+                    self.last = time.time()
+        except OSError:
+            pass
+        for x in (a, b):
+            try:
+                x.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def close(self):
+        try:
+            self.srv.close()
+        except OSError:
+            pass
+
+
+def serve(jid):
+    """Open the agent's gate in this process. False if its port is held by something else."""
+    with _LOCK:
+        if jid in _GATES:
+            return True
+        rec = record(jid)
+        if not rec or not rec.get("port"):
+            return False
+        if rec.get("pid") and not rec.get("cport"):   # from before the gate: Chrome itself sits on the port
+            _kill(rec)
+            rec.pop("pid")
+            _write(jid, rec)
+            for _ in range(30):
+                if not alive(rec["port"]):
+                    break
+                time.sleep(0.1)
+        try:
+            _GATES[jid] = Gate(jid, rec["port"])
+        except OSError:
+            return False
+        return True
+
+
+def reap(now=None):
+    """Close Chromes nobody has driven for IDLE seconds. Not while you watch it or it's recording."""
+    now = now or time.time()
+    for jid, g in list(_GATES.items()):
+        if now - g.last < IDLE or _LISTENERS.get(jid) or jid in _RECORDERS:
+            continue
+        with _LOCK:
+            rec = record(jid)
+            if rec and rec.get("pid"):
+                _kill(rec)
+                rec.pop("pid")
+                _write(jid, rec)
+
+
+def janitor(every=5):
+    """Server loop: a gate for every agent browser (agents launched elsewhere too), and the idle reaper."""
+    global _SERVING
+    _SERVING = True
+    while True:
+        for f in home().glob("*.json"):
+            if not f.stem.endswith("-checks") and f.stem not in _GATES:
+                try:
+                    serve(f.stem)
+                except Exception:
+                    pass
+        try:
+            reap()
+        except Exception:
+            pass
+        time.sleep(every)
 
 
 def wants_browser(cwd):
@@ -231,12 +361,12 @@ def wants_browser(cwd):
 
 
 def prepare(cwd):
-    """Start a browser before the agent exists (its id isn't known yet). adopt() or discard() it after."""
+    """A browser record for an agent about to start (its id isn't known yet). adopt() or discard() it after.
+    No Chrome yet: the gate starts it when the agent first uses it."""
     if not wants_browser(cwd):
         return None
     key = secrets.token_hex(4)
-    port, profile = free_port(), str(home() / f"profile-{key}")
-    rec = {"port": port, "profile": profile, "pid": _spawn(port, profile), "mcp": True,
+    rec = {"port": free_port(), "profile": str(home() / f"profile-{key}"), "mcp": True,
            "token": secrets.token_urlsafe(24), "keyfile": str(home() / f"agent-{key}.token")}
     paths.write_private(rec["keyfile"], rec["token"])   # read by loft/agent_mcp.py; never on a command line
     return rec
@@ -261,6 +391,8 @@ def jid_for_token(token):
 def adopt(jid, rec):
     with _LOCK:
         _write(jid, rec)
+    if _SERVING:
+        serve(jid)
 
 
 def mcp_config(rec):
@@ -283,6 +415,9 @@ def _kill(rec):
         cmd = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True).stdout
         if rec.get("profile", "\0") in cmd:
             os.killpg(pid, signal.SIGTERM)
+            p = _PROCS.pop(pid, None)
+            if p:
+                threading.Thread(target=p.wait, daemon=True).start()
     except (OSError, subprocess.SubprocessError):
         pass
 
@@ -297,6 +432,9 @@ def discard(rec):
 
 def stop(jid):
     rec_stop(jid)
+    g = _GATES.pop(jid, None)
+    if g:
+        g.close()
     with _LOCK:
         rec = record(jid)
         discard(rec)
@@ -725,10 +863,14 @@ def recording(jid):
 
 
 def rec_start(jid, port):
+    if jid in _RECORDERS:
+        raise RuntimeError("Already recording.")
+    r = Recorder(jid, port)   # outside the lock: it connects through the gate, which may need it
     with _LOCK:
         if jid in _RECORDERS:
+            r.close()
             raise RuntimeError("Already recording.")
-        _RECORDERS[jid] = Recorder(jid, port)
+        _RECORDERS[jid] = r
     _notify(jid, recording(jid), True)
 
 

@@ -188,6 +188,30 @@ class Live(unittest.TestCase):
         # and on localhost, where the login wasn't saved
         self.assertTrue(BR.run_check(port2, f"http://localhost:{self.port}", steps, self.tmp / "s5.png", scope="p1")["ok"])
 
+    def test_lazy_start_and_idle_close(self):
+        """No Chrome until something connects to the agent's port; closed when idle; back on next use."""
+        rec = BR.prepare(str(self.site))
+        self.assertNotIn("pid", rec)
+        self.assertFalse(BR.alive(rec["port"]))
+        jid = "lazy1"
+        self.addCleanup(BR.stop, jid)
+        BR.adopt(jid, rec)
+        self.assertTrue(BR.serve(jid))
+        self.assertIsNone(BR.record(jid).get("pid"))
+        ws = BR._get(rec["port"], "/json/version", timeout=15)["webSocketDebuggerUrl"]   # the agent's MCP does this first
+        self.assertIn(f":{rec['port']}/", ws)          # Chrome hands back the gate's port, not its own
+        pid, cport = BR.record(jid)["pid"], BR.record(jid)["cport"]
+        cdp = BR.CDP(ws)
+        self.assertTrue(cdp.call("Target.getTargets")["targetInfos"])
+        cdp.close()
+        BR.reap(time.time() + BR.IDLE - 5)            # not idle long enough
+        self.assertEqual(BR.record(jid).get("pid"), pid)
+        BR.reap(time.time() + BR.IDLE + 1)
+        self.assertIsNone(BR.record(jid).get("pid"))
+        self.assertTrue(self.wait(lambda: not BR.alive(cport)))
+        self.assertTrue(BR.alive(rec["port"]) is not None)                     # next use starts it again
+        self.assertNotEqual(BR.record(jid)["pid"], pid)
+
     def test_agent_tools_over_mcp(self):
         """loft/agent_mcp.py -> a real Loft server -> the agent's own browser, with its token."""
         jid = "feedbeef"
