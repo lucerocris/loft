@@ -342,6 +342,9 @@ def pin_check(dev, ip):
     return True, ""
 
 
+WATCH_OFF = False
+
+
 class Phone:
     """The tailnet listener for Loft Mobile."""
     srv = None
@@ -380,6 +383,22 @@ class Phone:
             srv.shutdown(); srv.server_close()
             Conns.close()
             print("phone access off", flush=True)
+
+    @classmethod
+    def watch(cls):
+        """Keep the phone listener up while it's switched on. At login Tailscale often comes up after
+        Loft, and its address can change: retry until it's reachable, re-bind when the address moves."""
+        while True:
+            time.sleep(10)
+            try:
+                if not load_config().get("phone") or WATCH_OFF:
+                    continue
+                if cls.srv is None:
+                    cls.start()
+                elif tailscale_ip() != cls.ip:
+                    cls.stop(); cls.start()
+            except Exception as e:
+                cls.error = str(e)
 
     @classmethod
     def set(cls, on):
@@ -1751,8 +1770,11 @@ def main():
         on = True
     if "--no-tailnet" in sys.argv:
         on = False
+    global WATCH_OFF
+    WATCH_OFF = "--no-tailnet" in sys.argv
     if on:
         Phone.start()
+    threading.Thread(target=Phone.watch, daemon=True).start()
     if "--no-pending-loop" not in sys.argv:
         threading.Thread(target=pending_loop, daemon=True).start()
     srv.serve_forever()

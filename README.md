@@ -113,6 +113,12 @@ Install a build from the GitHub release (or build it yourself, below):
 - macOS: open the `.dmg` and drag Loft to Applications. Builds are unsigned for now, so the first
   time right-click Loft and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Loft.app`.
 
+### Start at login (Linux)
+
+To have Loft (and phone access, if it's on) ready as soon as you log in, add
+`~/.config/autostart/Loft.desktop` with `Exec=loft-desktop --hidden`. `--hidden` starts it in the
+tray; phone access keeps retrying until Tailscale is up.
+
 `loft app` opens the desktop app when it's installed; `loft app --browser` opens the older
 Chrome/Edge `--app` window instead.
 
