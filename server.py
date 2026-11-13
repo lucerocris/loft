@@ -1565,6 +1565,7 @@ def main():
         Phone.start()
     if "--no-pending-loop" not in sys.argv:
         threading.Thread(target=pending_loop, daemon=True).start()
+    threading.Thread(target=BR.janitor, daemon=True).start()   # agent browsers: start on first use, close when idle
     srv.serve_forever()
 
 
