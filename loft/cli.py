@@ -21,8 +21,11 @@
   loft migrate [--yes]      move agents started under `cswap run N` into ~/.claude/jobs
 
   loft new "<prompt>" [--dir D] [--account A] [--project P] [--title T] [--todo]
+          [--login NAME ...] [--phone | --no-phone]
                             start an agent (--todo: save it to Todo instead). The title
-                            and summary are written for you unless --title is given
+                            and summary are written for you unless --title is given.
+                            --login: saved logins it may sign in with (Loft › Vault);
+                            --phone: give it an Android phone (default: mobile app folders)
   loft reply <id|name> "<message>"
                             send a message to an agent (queued while it works)
   loft archive <id|name>... | --done | --idle | --all
@@ -55,6 +58,19 @@
                             the default "group by" for new windows and phones
   loft migrate-config [--yes] [--force]
                             write accounts.json from the older two-account (Work/Personal) setup
+
+  loft vault list                     keys and logins (names only, never values)
+  loft vault add-key NAME [--project P | --account A] [--note N]
+                            store a dev key or token (the value is read from stdin or asked for)
+  loft vault rm <key name|login>      remove a key or a login
+  loft vault run [--project P] [--account A] -- <command ...>
+                            run a command with the keys in scope as env vars
+                            (project and account default to the current folder's)
+  loft vault env [--project P] [--account A]
+                            print `export NAME=...` lines (for `eval`), e.g. into a dev shell
+  loft phone list                     Android phones and emulators (Loft › Devices)
+  loft phone start [emulator]         start an emulator headless
+  loft phone stop <serial>
 """
 import json
 import os
@@ -600,7 +616,9 @@ def cmd_new(argv):
     rest = list(argv)
     d, acct, proj, title = flag(rest, "--dir"), flag(rest, "--account"), flag(rest, "--project"), flag(rest, "--title")
     todo_only = "--todo" in rest
-    rest = [a for a in rest if a != "--todo"]
+    logins = flags(rest, "--login")
+    phone = True if "--phone" in rest else False if "--no-phone" in rest else None
+    rest = [a for a in rest if a not in ("--todo", "--phone", "--no-phone")]
     if any(a.startswith("--") for a in rest):
         raise SystemExit(f"unknown option {next(a for a in rest if a.startswith('--'))}")
     prompt = " ".join(rest).strip()
@@ -615,7 +633,18 @@ def cmd_new(argv):
         pid = p["id"]
     if d:
         d = str(Path(os.path.expanduser(d)).resolve())
-    code, msg, jid, todo = B.create_task(prompt, d or "", acc_id, pid, title or "", start=not todo_only)
+    if logins:
+        from . import vault as V
+        all_ = V.load()["logins"]
+        ids = []
+        for n in logins:
+            hit = V.find_login(n, all_)
+            if not hit:
+                raise SystemExit(f"no login {n!r} (see `loft vault list`)")
+            ids.append(hit["id"])
+        logins = ids
+    code, msg, jid, todo = B.create_task(prompt, d or "", acc_id, pid, title or "", start=not todo_only,
+                                         logins=logins, phone=phone)
     if code != 200:
         raise SystemExit(msg)
     if jid:
@@ -846,6 +875,137 @@ def cmd_project(argv):
     raise SystemExit("usage: loft project list|add|edit|rm|assign (see `loft help`)")
 
 
+def _vault_scope(rest):
+    from . import vault as V
+    acct, proj = flag(rest, "--account"), flag(rest, "--project")
+    cfg = A.load()
+    acc_id = find_account(acct, cfg)["id"] if acct else (A.account_of_env(os.environ, cfg) or {}).get("id") \
+        or cfg.get("default")
+    pid = None
+    if proj:
+        p = P.find(proj)
+        if not p:
+            raise SystemExit(f"no project {proj!r}")
+        pid = p["id"]
+    else:
+        try:
+            pid = P.project_of("", os.getcwd(), P.load())
+        except Exception:
+            pid = None
+    return V, acc_id, pid
+
+
+def cmd_vault(argv):
+    from . import vault as V
+    sub, rest = (argv[0] if argv else "list"), list(argv[1:])
+    if sub == "hook":   # Claude Code SessionStart hook for an agent Loft launched (loft/vault.py)
+        try:
+            sys.stdin.read()
+        except Exception:
+            pass
+        try:
+            V.run_hook(rest[0] if rest else "", os.environ.get("CLAUDE_ENV_FILE"))
+        except Exception as e:
+            print(f"loft: couldn't load keys: {e}", file=sys.stderr)
+        return 0
+    if sub in ("list", "ls"):
+        d = V.load()
+        say(f"secrets in {V.backend().label}")
+        for k in d["keys"]:
+            say(f"  key    {k['name']:<28} {_scope_text(k['scope'])}")
+        for x in d["logins"]:
+            say(f"  login  {x['label']:<28} {x['username']}  {_scope_text(x['scope'])}{'  2FA' if x.get('totp') else ''}")
+        if not d["keys"] and not d["logins"]:
+            say(C.c(C.DIM, "nothing yet. `loft vault add-key NAME`, or Loft › Vault in the app"))
+        return 0
+    if sub in ("add-key", "add"):
+        acct, proj, note = flag(rest, "--account"), flag(rest, "--project"), flag(rest, "--note", "")
+        if not rest:
+            raise SystemExit("usage: loft vault add-key NAME [--project P | --account A] [--note N]")
+        scope = {"kind": "global"}
+        if proj:
+            p = P.find(proj)
+            if not p:
+                raise SystemExit(f"no project {proj!r}")
+            scope = {"kind": "project", "id": p["id"]}
+        elif acct:
+            scope = {"kind": "account", "id": find_account(acct, A.load())["id"]}
+        if sys.stdin.isatty():
+            import getpass
+            value = getpass.getpass(f"value for {rest[0]} (hidden): ")
+        else:
+            value = sys.stdin.read().rstrip("\n")
+        try:
+            k = V.add_key(rest[0], value, scope, note)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        say(f"saved {k['name']} ({_scope_text(k['scope'])})"); return 0
+    if sub in ("rm", "remove", "delete"):
+        name = " ".join(rest).strip()
+        d = V.load()
+        hits = [("key", k) for k in d["keys"] if k["name"] == name or k["id"] == name] + \
+               [("login", x) for x in d["logins"] if name in (x["label"], x["id"], x["username"])]
+        if not hits:
+            raise SystemExit(f"no key or login {name!r}")
+        if len(hits) > 1:
+            raise SystemExit(f"{name!r} matches {len(hits)} entries; use its id: " + ", ".join(h[1]["id"] for h in hits))
+        kind, item = hits[0]
+        (V.remove_key if kind == "key" else V.remove_login)(item["id"])
+        say(f"removed {kind} {name}"); return 0
+    if sub in ("run", "env"):
+        cmd = []
+        if "--" in rest:
+            i = rest.index("--"); cmd = rest[i + 1:]; rest = rest[:i]
+        V, acc_id, pid = _vault_scope(rest)
+        env = V.keys_for(acc_id, pid)
+        if sub == "env":
+            sys.stdout.write(V.export_lines(env)); return 0
+        if not cmd:
+            raise SystemExit("usage: loft vault run [--project P] [--account A] -- <command ...>")
+        os.execvpe(cmd[0], cmd, {**os.environ, **env})
+    raise SystemExit("usage: loft vault list|add-key|rm|run|env (see `loft help`)")
+
+
+def _scope_text(s):
+    s = s or {"kind": "global"}
+    if s.get("kind") == "project":
+        p = P.get(s.get("id"))
+        return f"project {p['name'] if p else s.get('id')}"
+    if s.get("kind") == "account":
+        a = A.get(s.get("id"))
+        return f"account {a['label'] if a else s.get('id')}"
+    return "everywhere"
+
+
+def cmd_phone(argv):
+    from . import mobile as M
+    sub, rest = (argv[0] if argv else "list"), list(argv[1:])
+    if not M.available():
+        raise SystemExit("no Android SDK found (adb). Install Android Studio, or set ANDROID_HOME")
+    if sub in ("list", "ls"):
+        st = M.status()
+        for d in st["devices"]:
+            say(f"  {d['serial']:<16} {d.get('avd') or d.get('model') or ''}  {d['state']}"
+                f"{'  agent ' + d['agent'] if d.get('agent') else ''}")
+        for a in st["avds"]:
+            if not a["running"]:
+                say(C.c(C.DIM, f"  {'(off)':<16} {a['name']}"))
+        if not st["devices"] and not st["avds"]:
+            say("no phones or emulators. Create an emulator in Android Studio (Device Manager)")
+        return 0
+    try:
+        if sub == "start":
+            names = M.avds()
+            name = rest[0] if rest else (names[0] if names else "")
+            s = M.boot(name)
+            say(f"starting {name} as {s}…"); M.wait_booted(s); say("ready"); return 0
+        if sub == "stop" and rest:
+            say(M.stop(rest[0])); return 0
+    except (ValueError, RuntimeError) as e:
+        raise SystemExit(str(e))
+    raise SystemExit("usage: loft phone list|start [emulator]|stop <serial>")
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     show_all = "--all" in argv
@@ -879,6 +1039,10 @@ def main(argv=None):
         return cmd_switch(rest)
     if cmd in ("project", "projects"):
         cmd_project(rest); return 0
+    if cmd == "vault":
+        return cmd_vault(argv[1:])
+    if cmd in ("phone", "phones", "devices"):
+        return cmd_phone(argv[1:])
     if cmd == "new":
         return cmd_new(rest)
     if cmd == "reply":

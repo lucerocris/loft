@@ -7,7 +7,7 @@ real background agent on the account it was written for.
 Terminal board columns move by themselves as agents change state:
     TODO  ->  WORKING  ->  NEEDS YOU  ->  DONE
 """
-import contextlib, curses, io, json, os, re, shlex, shutil, subprocess, textwrap, time, uuid
+import contextlib, curses, io, json, os, re, shlex, shutil, subprocess, sys, textwrap, time, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -608,6 +608,15 @@ def act_archive(card):
     except Exception:
         pass
     try:
+        rec = BR.record(card["id"]) or {}
+        if rec.get("ticket"):
+            from . import vault as V
+            V.drop_ticket(rec["ticket"])   # its keys hook stops working
+        from . import mobile as M
+        M.release(card["id"])              # its phone is free for the next agent
+    except Exception:
+        pass
+    try:
         BR.stop(card["id"])   # its shared browser and profile go with it
     except Exception:
         pass
@@ -656,6 +665,72 @@ def spawn_bg(cwd, acc, args, prompt, name):
     return jid, None
 
 
+MOBILE_MARKERS = ("pubspec.yaml", "android", "app.json", "build.gradle", "build.gradle.kts", "settings.gradle",
+                  "settings.gradle.kts", "AndroidManifest.xml", "capacitor.config.json", "capacitor.config.ts")
+
+
+def wants_phone(cwd, todo=None):
+    """Give a new agent an Android phone? When the task asks for one, or the folder is a mobile app."""
+    from . import mobile as M
+    if (todo or {}).get("phone") is False or os.environ.get("LOFT_PHONE") == "0" or not M.available():
+        return False
+    if (todo or {}).get("phone"):
+        return True
+    return any((Path(cwd) / m).exists() for m in MOBILE_MARKERS)
+
+
+def agent_extras(todo, cwd, acc):
+    """What Loft adds to an agent's launch: its browser, phone, logins and keys. (record or None, claude args).
+
+    One agent record (loft/browser.py, <cache>/browsers/<jid>.json) carries the token its Loft tools
+    use; the browser itself is only started for web folders, accounts with signed-in sites, and tasks
+    with logins (they sign in in the browser, or on the phone for mobile apps)."""
+    from . import vault as V
+    try:
+        project = todo.get("project") or P.project_of("", cwd, P.load())
+    except Exception:
+        project = todo.get("project")
+    try:
+        logins = V.logins_for(acc["id"], project, todo.get("logins") or None)
+        key_names = V.key_names_for(acc["id"], project)
+    except Exception:
+        logins, key_names = [], []
+    phone = wants_phone(cwd, todo)
+    try:
+        br = BR.prepare(cwd, acc["id"], tools=bool(phone or logins or key_names),
+                        browser=bool(logins and not phone))
+    except Exception:
+        br = None
+    if not br:
+        return None, []
+    br["phone"] = phone
+    br["logins"] = [x["id"] for x in logins]
+    br["project"] = project
+    notes = [BR.agent_note(br)] if br.get("port") else []
+    if phone:
+        notes.append(PHONE_NOTE)
+    if logins or key_names:
+        notes.append(V.agent_note(logins, key_names))
+    extra = ["--mcp-config", BR.mcp_config(br)]
+    if br.get("port"):
+        extra += ["--disallowedTools", BR.DENY_TOOLS]
+    if key_names:
+        br["ticket"] = V.make_ticket(acc["id"], project)
+        extra += ["--settings", V.hook_settings(br["ticket"], [sys.executable, str(paths.REPO / "bin" / "loft")])]
+    if notes:
+        extra += ["--append-system-prompt", " ".join(n for n in notes if n)]
+    return br, extra
+
+
+PHONE_NOTE = ("Loft shares an Android phone with you (an emulator, or a real phone over adb): the loft_phone_* tools "
+              "show its screen with the tappable elements, and tap, swipe, type, press keys, open apps and deep "
+              "links, install APKs and read logs. The user watches it live in Loft › Devices and may take over. "
+              "loft_phone_screen also tells you the device's serial: build and install with the usual tools on it "
+              "(`flutter run -d <serial>`, `npx expo run:android --device <serial>`, `./gradlew installDebug` with "
+              "ANDROID_SERIAL=<serial>, `adb -s <serial> ...`). Don't start or stop emulators yourself; ask Loft "
+              "with loft_phone_use. After a change, look at the screen to check it.")
+
+
 def launch_todo(todo):
     cwd = os.path.expanduser(todo.get("cwd") or "~")
     if os.path.realpath(cwd) == os.path.realpath(str(HOME)):
@@ -664,12 +739,7 @@ def launch_todo(todo):
         return None, f"folder missing: {cwd}"
     cfg = A.load()
     acc = todo_account(todo, cfg)
-    try:   # web project, or an account with signed-in sites: a browser the agent shares with the card
-        br = BR.prepare(cwd, acc["id"])   # (see loft/browser.py, loft/sites.py)
-    except Exception:
-        br = None
-    extra = ["--mcp-config", BR.mcp_config(br), "--disallowedTools", BR.DENY_TOOLS,
-             "--append-system-prompt", BR.agent_note(br)] if br else []
+    br, extra = agent_extras(todo, cwd, acc)
     jid, err = spawn_bg(cwd, acc, extra, todo["prompt"], todo.get("title") or "agent")
     if not jid:
         BR.discard(br)
@@ -686,7 +756,7 @@ def launch_todo(todo):
     return jid, f"started {jid} on {acc['label']}"
 
 
-def create_task(prompt, cwd="", account=None, project=None, title="", start=False):
+def create_task(prompt, cwd="", account=None, project=None, title="", start=False, logins=None, phone=None):
     """A new task from the app, the phone or `loft new`: saved to Todo, or started now.
     Returns (status, message, jid or None, todo). A title typed here is kept as is; without
     one the card gets a title from the prompt until the generated one lands (loft/titles.py)."""
@@ -712,6 +782,10 @@ def create_task(prompt, cwd="", account=None, project=None, title="", start=Fals
             "created": now_utc().isoformat()}
     if proj:
         todo["project"] = proj["id"]
+    if logins:
+        todo["logins"] = [str(x) for x in logins if isinstance(x, str)][:20]
+    if phone is not None:
+        todo["phone"] = bool(phone)
     if start:
         if not prompt:
             return 400, "Write a prompt to start it with.", None, todo

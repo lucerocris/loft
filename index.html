@@ -489,15 +489,44 @@ dialog.phone::backdrop { background: rgba(8,9,10,.6); }
 .bside input { height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--raised); color: var(--t1); font: inherit; }
 .ck-ok { color: var(--ok); } .ck-bad { color: var(--failed); }
 /* ---------- Loft › Browser: signed-in sites ---------- */
-.top .ibtn[data-sites] { margin-left: 0; color: var(--t3); } .top .ibtn[data-sites] + .btn { margin-left: 4px; }
+.top .ibtn[data-sites], .top .ibtn[data-devices], .top .ibtn[data-vault] { margin-left: 0; color: var(--t3); } .top .ibtn[data-devices] + .btn { margin-left: 4px; }
 .top { gap: 4px; } .top .vsw { margin-left: 8px; } .top .ibtn { width: 30px; }
-.btop .acts .ibtn[data-sites] { color: var(--t3); }
+.btop .acts .ibtn[data-sites], .btop .acts .ibtn[data-devices], .btop .acts .ibtn[data-vault] { color: var(--t3); }
 .bchip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px 0 6px; border-radius: 99px; border: 1px solid var(--border-strong); background: var(--raised); color: var(--t2); font: 500 11px var(--sans); cursor: pointer; flex: none; }
 .bchip:hover { background: var(--selected); color: var(--t1); }
 .bchip svg { width: 12px; height: 12px; }
 .bchip .dot, .bdot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); display: inline-block; flex: none; }
 .bacc { display: inline-flex; align-items: center; gap: 6px; color: var(--t2); }
 .stabs { display: flex; align-items: center; gap: 6px; padding: 0 24px 10px; flex-wrap: wrap; }
+/* ---------- Loft › Devices ---------- */
+.dwrap { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--border); }
+.dlist { width: 280px; flex: none; overflow: auto; border-right: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.dmain { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dmain .bbar { border-top: 0; border-bottom: 1px solid var(--border); }
+.drow { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--r-sm); cursor: pointer; font-size: 13px; }
+.drow:hover { background: var(--raised); } .drow.on { background: var(--selected); } .drow.off { cursor: default; } .drow.off:hover { background: none; }
+.drow .grow { flex: 1; display: flex; flex-direction: column; min-width: 0; } .drow .dn { color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drow .st-muted { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drow .sd { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--t3); }
+.drow .sd.live { background: var(--ok); } .drow .sd.running { background: var(--needs); }
+.drow .ibtn.armed { color: var(--failed); }
+.dfoot { margin: 10px 8px 0; font-size: 11px; }
+.dview { padding: 12px; } .dview img { border-radius: 18px; box-shadow: 0 0 0 1px var(--border-strong); cursor: pointer; }
+@media (max-width: 760px) { .dwrap { flex-direction: column; } .dlist { width: auto; max-height: 34%; border-right: 0; border-bottom: 1px solid var(--border); } }
+/* ---------- Loft › Vault ---------- */
+.vault { flex: 1; min-height: 0; overflow: auto; padding: 4px 24px 24px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); }
+.vintro { color: var(--t2); font-size: 12px; max-width: 760px; padding: 12px 0 6px; line-height: 1.5; }
+.vrow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md, 10px); background: var(--surface); }
+.vrow .grow { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 2px; } .vrow .vn { color: var(--t1); font-size: 13px; }
+.vrow .st-muted { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrow .vval { color: var(--t2); font-size: 12px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: all; }
+.vrow .ibtn.armed { color: var(--failed); }
+.mono { font-family: var(--mono); }
+.vform { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--r-md, 10px); background: var(--raised); }
+.vform input, .vform select { height: 30px; min-width: 0; flex: 1 1 180px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--t1); font: inherit; font-size: 13px; }
+.vform input.mono { font: 12px var(--mono); }
+.vform .btn { height: 30px; }
+#nextras { display: contents; }
 .stab { display: inline-flex; align-items: center; gap: 7px; height: 30px; max-width: 220px; padding: 0 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); color: var(--t2); font-weight: 500; cursor: pointer; }
 .stab .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stab:hover { color: var(--t1); border-color: var(--border-strong); }
@@ -592,7 +621,7 @@ dialog.sheet .sh-b textarea:focus { border-color: var(--t3); }
       <button class="ibtn" data-assist title="Assistant: ask Loft to do things (A)" aria-label="Assistant"><i data-lucide="sparkles" class="ic"></i></button>
       <button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button>
       <button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button>
-      <button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button>
+      <button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button><button class="ibtn" data-devices title="Devices: Android phones and emulators" aria-label="Devices"><i data-lucide="tablet-smartphone" class="ic"></i></button>
       <button class="btn primary sq" id="newBtn" title="New task (N)" aria-label="New task"><i data-lucide="plus" class="ic"></i></button>
     </div>
     <div class="ctl"><div class="ddslot" id="grp"></div><div class="ddslot" id="filters"></div></div>
@@ -605,7 +634,7 @@ dialog.sheet .sh-b textarea:focus { border-color: var(--t3); }
       <div class="ctl"><div class="ddslot" id="bgrp"></div><div class="ddslot" id="bfilters"></div></div>
       <span class="grow"></span>
       <div class="usage" id="busage"></div>
-      <div class="acts"><button class="ibtn" data-assist title="Assistant: ask Loft to do things (A)" aria-label="Assistant"><i data-lucide="sparkles" class="ic"></i></button><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div></div>
+      <div class="acts"><button class="ibtn" data-assist title="Assistant: ask Loft to do things (A)" aria-label="Assistant"><i data-lucide="sparkles" class="ic"></i></button><button class="ibtn" data-settings title="Accounts, projects, organizing" aria-label="Settings" aria-haspopup="menu"><i data-lucide="settings-2" class="ic"></i></button><button class="ibtn" data-phone title="Phone access" aria-label="Phone access"><i data-lucide="smartphone" class="ic"></i></button><button class="ibtn" data-sites title="Browser: your signed-in sites (Shift+W)" aria-label="Browser"><i data-lucide="globe" class="ic"></i></button><button class="ibtn" data-devices title="Devices: Android phones and emulators" aria-label="Devices"><i data-lucide="tablet-smartphone" class="ic"></i></button><button class="btn primary" id="newBtn3" title="New task (N)"><i data-lucide="plus" class="ic"></i>New</button></div></div>
     <div class="cols" id="cols"></div>
     <div class="bhint">j k move · h l column · Enter open · s start a todo · g group by · drag a todo to Working to start it · b inbox · n new</div>
   </section>
@@ -892,8 +921,8 @@ async function startTodo(id) {
 
 /* ---------- pane ---------- */
 let term = null, fit = null, ws = null, wsFor = null;
-function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], !!brView[c.id], c.kind, c.pending?.account || "", c.pending?.error || ""].join("|") : sel || "none"; }
-const SCREENS = ["new", "accounts", "setup", "projects", "organize", "browser", "assistant"];
+function paneKey(c) { return c ? [c.id, statusOf(c), c.name, c.account, !!termView[c.id], !!brView[c.id], c.kind, c.pending?.account || "", c.pending?.error || "", c.phone || ""].join("|") : sel || "none"; }
+const SCREENS = ["new", "accounts", "setup", "projects", "organize", "browser", "assistant", "devices", "vault"];
 function renderPane() {
   if (loaded && S.setup && sel !== "accounts") sel = "setup";        // first run: no accounts.json yet
   if (sel === "setup" && loaded && !S.setup) sel = "accounts";
@@ -905,7 +934,8 @@ function renderPane() {
   $("#app").classList.toggle("board", view === "board");
   const key = sel === "projects" ? "projects|" + JSON.stringify([S.projects, S.unsorted, S.accounts]) : SCREENS.includes(sel) ? sel : paneKey(c);
   document.querySelectorAll("[data-assist]").forEach(b => b.classList.toggle("asst-on", sel === "assistant"));
-  if (p.dataset.key === key) { if (c) refreshPane(c); else if (sel === "browser") sitesAgents(); else if (sel === "assistant") asRender(); return; }   // keep typing / terminal alive
+  if (p.dataset.key === key) { if (c) refreshPane(c); else if (sel === "browser") sitesAgents(); else if (sel === "assistant") asRender(); return; }
+  if (sel !== "devices") disconnectDevice();   // keep typing / terminal alive
   p.dataset.key = key;
   if (sel !== "new" && !(sel === "accounts" && loginFor && wsFor === "login-" + loginFor) && (!c || c.kind === "todo" || brView[c.id] || !(c.col !== "needs" || termView[c.id]))) disconnectTerm();
   if (!(c && c.kind === "agent" && brView[c.id]) && sel !== "browser") disconnectBrowser();
@@ -914,6 +944,8 @@ function renderPane() {
   if (sel === "projects") return paneProjects(p);
   if (sel === "organize") return paneOrganize(p);
   if (sel === "browser") return paneSites(p);
+  if (sel === "devices") return paneDevices(p);
+  if (sel === "vault") return paneVault(p);
   if (sel !== "assistant") asStop();
   if (sel === "assistant") return paneAssist(p);
   if (!c) return paneQuiet(p);
@@ -931,6 +963,7 @@ function head(c, actions = true) {
     <div class="sum" id="sumLine" title="${esc(c.summary || "")}"${c.summary ? "" : " hidden"}>${esc(c.summary || "")}</div>
     <div class="meta">${accChip(c)}<span class="sep">·</span><span class="path">${esc(proj)}</span><span class="sep">·</span><span class="${st[1]}" id="stLabel"${s === "running" ? " " + accColor(c) : ""}>${st[0]}</span>${pendingBadge(c)}<span id="qbadge">${queueBadge(c)}</span><span class="sep">·</span><span class="st-muted" id="agoLabel">${ago(c.updated)}</span><span id="ckbadge">${checksBadge(c)}</span><span id="bacc">${brAccBadge(c)}</span></div></div>
     ${actions && c.kind === "agent" ? `<button class="btn quiet" data-toggle-br title="Shared browser (W)" aria-pressed="${!!brView[c.id]}"><i data-lucide="${brView[c.id] ? "square-terminal" : "globe"}" class="ic"></i>${brView[c.id] ? "Agent" : "Browser"}<span class="bdot" id="brLive" title="On a page now"${c.browser?.live && !brView[c.id] ? "" : " hidden"}></span></button>` : ""}
+    ${actions && c.kind === "agent" && c.phone ? `<button class="btn quiet" data-agentphone="${esc(c.phone)}" title="The Android phone this agent drives"><i data-lucide="tablet-smartphone" class="ic"></i>Phone</button>` : ""}
     ${actions && c.col === "needs" && !brView[c.id] ? `<button class="btn quiet" data-toggle-term title="Switch view (T)"><i data-lucide="${termView[c.id] ? "message-square" : "square-terminal"}" class="ic"></i>${termView[c.id] ? "Question" : "Terminal"}</button>` : ""}
     <button class="ibtn" data-menu aria-label="More actions" title="More"><i data-lucide="ellipsis" class="ic"></i></button></div>`;
 }
@@ -994,10 +1027,11 @@ function paneNew(p) {
       ${accSeg}
       <span class="label">Folder</span><label class="folder" title="Project folder"><i data-lucide="folder" class="ic"></i><input id="ndir" list="dirs" value="${esc(dir)}" spellcheck="false" aria-label="Folder"><datalist id="dirs">${dirs.map(d => `<option value="${esc(d)}">`).join("")}</datalist><button class="ibtn fbr" data-fsbrowse="ndir" title="Browse folders (Ctrl+O)" aria-label="Browse folders"><i data-lucide="folder-search" class="ic"></i></button></label>
       ${pdirs.length > 1 ? `<div class="dchips" role="group" aria-label="${esc(pj.name)} folders">${pdirs.map(d => `<button data-ndir="${esc(d)}" aria-pressed="${d === dir}" title="${esc(d)}">${esc(d)}</button>`).join("")}</div>` : ""}
-      ${hint ? `<span class="fhint">${hint}</span>` : ""}</div>
+      ${hint ? `<span class="fhint">${hint}</span>` : ""}<div id="nextras"></div></div>
     <div class="row"><button class="btn primary" id="nStart"><i data-lucide="play" class="ic"></i>Start</button><button class="btn quiet" id="nTodo">Save to Todo</button><span class="hint" style="margin:0">Ctrl+Enter starts · the title is written for you${S.voice ? ` · say "…start it" at the end to start hands-free` : ""}</span></div>
     <div class="err" id="nerr"></div><div class="voice-note" id="vnote" hidden></div></div>`;
   icons(); setTimeout(() => $("#nprompt")?.focus(), 0);
+  newExtrasPaint(); if (!VT.data) vaultLoad().then(newExtrasPaint);
 }
 function paneQuiet(p) {
   const v = visible(), run = v.filter(c => c.col === "running").length, todo = v.filter(c => c.col === "todo").length;
@@ -1437,6 +1471,199 @@ async function sitesClick(t) {
   if (a === "reconnect") return mountSites(acc, true);
 }
 
+/* ---------- Loft › Devices: Android phones and emulators ---------- */
+// The device's screen streams over /ws/mobile/<serial> as JPEG frames (loft/mobile.py); your clicks, drags,
+// wheel and keys go back as taps, swipes and typing. Agents drive the same device with loft_phone_* tools.
+let DV = { serial: store.get("loft.devSerial") || "", ws: null, blob: null, data: null, agent: null };
+function disconnectDevice() { if (DV.ws) { const w = DV.ws; DV.ws = null; try { w.close(); } catch {} } if (DV.blob) URL.revokeObjectURL(DV.blob); DV.blob = null; }
+const dsend = m => DV.ws && DV.ws.readyState === 1 && DV.ws.send(JSON.stringify(m));
+function paneDevices(p) {
+  p.innerHTML = `<div class="head shead"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
+      <div class="ti"><div class="title" style="border:0">Devices</div><div class="meta" id="dmeta"><span class="st-muted">Android phones and emulators you and your agents share</span></div></div></div>
+    <div class="dwrap"><div class="dlist" id="dlist"><div class="hint">Looking for devices…</div></div>
+      <div class="dmain"><div class="bbar" id="dbar" hidden>
+          <button class="ibtn" data-dv="back" title="Back" aria-label="Back"><i data-lucide="chevron-left" class="ic"></i></button>
+          <button class="ibtn" data-dv="home" title="Home" aria-label="Home"><i data-lucide="house" class="ic"></i></button>
+          <button class="ibtn" data-dv="recents" title="Recent apps" aria-label="Recent apps"><i data-lucide="layout-grid" class="ic"></i></button>
+          <button class="ibtn" data-dv="rotate" title="Rotate" aria-label="Rotate"><i data-lucide="rotate-ccw-square" class="ic"></i></button>
+          <button class="ibtn" data-dv="power" title="Power (screen on and off)" aria-label="Power"><i data-lucide="power" class="ic"></i></button>
+          <span class="grow st-muted" id="dagent"></span></div>
+        <div class="bview dview" id="dview"><img id="dimg" tabindex="0" draggable="false" alt="The phone's screen"><div class="cover" id="dcover"><div>Pick a device, or start an emulator</div></div></div></div></div>`;
+  icons(); devRefresh();
+}
+let DVT = null;
+function devTick() { clearTimeout(DVT); DVT = setTimeout(() => { if (sel === "devices") devRefresh(); }, 5000); }
+async function devRefresh() {
+  devTick();
+  try { DV.data = await api("/api/mobile"); } catch (e) { const l = $("#dlist"); if (l) l.innerHTML = `<div class="hint">${esc(e.message)}</div>`; return; }
+  devList();
+  const D = DV.data, ready = (D.devices || []).filter(d => d.state === "device");
+  if (!DV.ws && sel === "devices") { const s = ready.find(d => d.serial === DV.serial) || ready[0]; if (s) mountDevice(s.serial); }
+}
+function devList() {
+  const el = $("#dlist"), D = DV.data; if (!el || !D) return;
+  if (!D.adb) { el.innerHTML = `<div class="hint">No Android SDK found. Install Android Studio (or the platform tools), or set ANDROID_HOME, then reopen this.</div>`; return; }
+  const names = D.agentNames || {};
+  const devs = (D.devices || []).map(d => `<div class="drow${d.serial === DV.serial ? " on" : ""}" data-dpick="${esc(d.serial)}" role="button" tabindex="0">
+      <span class="sd ${d.ready ? "acc live" : "todo"}" style="--ac:var(--ok)"></span>
+      <span class="grow"><span class="dn">${esc(d.avd || d.model || d.serial)}</span><span class="st-muted">${esc(d.serial)}${d.state !== "device" ? " · " + esc(d.state) : d.ready ? "" : " · starting"}${d.agent ? ` · ${esc(names[d.agent] || "an agent")}` : ""}</span></span>
+      ${d.agent ? `<button class="ibtn" data-dfree="${esc(d.serial)}" title="Free it: the next agent that needs a phone gets it" aria-label="Free"><i data-lucide="hand" class="ic"></i></button>` : ""}
+      ${d.emulator ? `<button class="ibtn" data-dstop="${esc(d.serial)}" title="Stop this emulator" aria-label="Stop"><i data-lucide="square" class="ic"></i></button>` : ""}</div>`).join("");
+  const off = (D.avds || []).filter(a => !a.running).map(a => `<div class="drow off"><span class="sd todo"></span><span class="grow"><span class="dn">${esc(a.name)}</span><span class="st-muted">emulator · off</span></span>
+      <button class="btn secondary" data-dboot="${esc(a.name)}"><i data-lucide="play" class="ic"></i>Start</button></div>`).join("");
+  const starting = (D.avds || []).filter(a => a.starting && !(D.devices || []).some(d => d.serial === a.serial)).map(a => `<div class="drow"><span class="sd running"></span><span class="grow"><span class="dn">${esc(a.name)}</span><span class="st-muted">starting…</span></span></div>`).join("");
+  const h = (devs + starting + off) || `<div class="hint">No phones or emulators. Create an emulator in Android Studio (Device Manager), or plug in a phone with USB debugging on.</div>`;
+  el.innerHTML = h + `<div class="hint dfoot">Up to ${D.max} emulators at once. Agents in mobile app folders (or with “Android phone” on in New task) get one; they show up here while they drive it.${D.ffmpeg ? "" : " Install ffmpeg for a smooth live screen."}</div>`;
+  icons();
+}
+function mountDevice(serial) {
+  disconnectDevice(); DV.serial = serial; store.set("loft.devSerial", serial); devList();
+  const bar = $("#dbar"); if (bar) bar.hidden = false;
+  const img = $("#dimg"), cv = $("#dcover"); if (!img) return;
+  if (cv) { cv.hidden = false; cv.innerHTML = `<div><i data-lucide="loader" class="ic"></i>Connecting to ${esc(serial)}…</div>`; icons(); }
+  devInput(img);
+  const sock = new WebSocket(`ws://${location.host}/ws/mobile/${encodeURIComponent(serial)}?t=${TOKEN}`); sock.binaryType = "blob"; DV.ws = sock;
+  sock.onmessage = e => { if (sock !== DV.ws) return;
+    if (typeof e.data !== "string") { const u = URL.createObjectURL(e.data); img.src = u; if (DV.blob) URL.revokeObjectURL(DV.blob); DV.blob = u; const c = $("#dcover"); if (c && !c.hidden) c.hidden = true; return; }
+    const m = JSON.parse(e.data);
+    if (m.type === "hello") { DV.agent = m.agent; const a = $("#dagent"); if (a) a.textContent = m.agent ? `${cardOf(m.agent)?.name || "An agent"} drives this phone · you can too` : `${m.w}×${m.h}`; }
+    if (m.type === "toast") toast(m.text, m.err);
+    if (m.type === "gone") { const c = $("#dcover"); if (c) { c.hidden = false; c.innerHTML = `<div>The device went away<button class="btn secondary" data-dv="reconnect">Reconnect</button></div>`; } devRefresh(); } };
+  sock.onclose = () => { if (sock !== DV.ws) return; DV.ws = null; const c = $("#dcover"); if (c) { c.hidden = false; c.innerHTML = `<div>Disconnected<button class="btn secondary" data-dv="reconnect">Reconnect</button></div>`; } };
+}
+function devInput(img) {
+  if (img.dataset.wired) return; img.dataset.wired = "1";
+  const pos = e => { const r = img.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
+  img.addEventListener("mousedown", e => { e.preventDefault(); img.focus(); if (e.button === 2) return dsend({ type: "button", name: "back" }); dsend({ type: "pointer", kind: "down", ...pos(e) }); });
+  img.addEventListener("mouseup", e => { if (e.button === 2) return; dsend({ type: "pointer", kind: "up", ...pos(e) }); });
+  let wheelT = 0; img.addEventListener("wheel", e => { e.preventDefault(); const now = Date.now(); if (now - wheelT < 250) return; wheelT = now; dsend({ type: "pointer", kind: "wheel", dy: e.deltaY, ...pos(e) }); }, { passive: false });
+  img.addEventListener("contextmenu", e => e.preventDefault());
+  img.addEventListener("keydown", e => { e.stopPropagation();
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") return;
+    e.preventDefault();
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) return dsend({ type: "key", text: e.key });
+    dsend({ type: "key", key: e.key }); });
+  img.addEventListener("paste", e => { const t = e.clipboardData?.getData("text"); if (t) { e.preventDefault(); dsend({ type: "key", text: t }); } });
+}
+async function devClick(t) {
+  if (t.dataset.dpick) { if (t.dataset.dpick !== DV.serial || !DV.ws) mountDevice(t.dataset.dpick); return; }
+  if (t.dataset.dboot) { t.disabled = true; try { const r = await api("/api/mobile/boot", { avd: t.dataset.dboot }); toast(r.message); DV.data = r; devList(); DV.serial = r.serial; disconnectDevice(); setTimeout(devRefresh, 4000); setTimeout(devRefresh, 12000); setTimeout(devRefresh, 30000); } catch (e) { toast(e.message, true); t.disabled = false; } return; }
+  if (t.dataset.dstop) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.title = "Click again to stop it"; return; }
+    try { const r = await api("/api/mobile/stop", { serial: t.dataset.dstop }); toast(r.message); if (t.dataset.dstop === DV.serial) disconnectDevice(); setTimeout(devRefresh, 2500); } catch (e) { toast(e.message, true); } return; }
+  if (t.dataset.dfree) { try { const r = await api("/api/mobile/free", { serial: t.dataset.dfree }); toast(r.message); DV.data = r; devList(); } catch (e) { toast(e.message, true); } return; }
+  const a = t.dataset.dv;
+  if (a === "reconnect") return DV.serial ? mountDevice(DV.serial) : devRefresh();
+  if (a) { dsend({ type: "button", name: a }); $("#dimg")?.focus(); }
+}
+
+/* ---------- Loft › Vault: dev keys and logins ---------- */
+// Values live in the OS keychain (loft/vault.py); the page only gets them on Reveal/Copy. Agents get keys
+// as env vars in their shell and sign in with logins through loft_sign_in, never seeing the passwords.
+let VT = { data: null, tab: store.get("loft.vaultTab") || "keys", adding: false, edit: null };
+async function vaultLoad() { try { VT.data = await api("/api/vault"); } catch (e) { toast(e.message, true); } return VT.data; }
+function scopeText(s) { s = s || { kind: "global" }; if (s.kind === "project") return "Project " + (projById(s.id)?.name || s.id); if (s.kind === "account") return (accById(s.id)?.label || s.id) + " account"; return "Every agent"; }
+function scopeSelect(id, cur) {
+  cur = cur || { kind: "global" }; const v = cur.kind === "global" ? "global" : `${cur.kind}:${cur.id}`;
+  const opts = [`<option value="global">Every agent</option>`]
+    .concat((S.projects || []).map(p => `<option value="project:${esc(p.id)}"${v === "project:" + p.id ? " selected" : ""}>Project · ${esc(p.name)}</option>`))
+    .concat(multiAcc() ? (S.accounts || []).map(a => `<option value="account:${esc(a.id)}"${v === "account:" + a.id ? " selected" : ""}>Account · ${esc(a.label)}</option>`) : []);
+  return `<select id="${id}" aria-label="Who gets it">${opts.join("")}</select>`;
+}
+function scopeOf(id) { const v = $("#" + id)?.value || "global"; if (v === "global") return { kind: "global" }; const i = v.indexOf(":"); return { kind: v.slice(0, i), id: v.slice(i + 1) }; }
+function paneVault(p) {
+  p.innerHTML = `<div class="head shead"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
+      <div class="ti"><div class="title" style="border:0">Vault</div><div class="meta" id="vmeta"><span class="st-muted">Dev keys and logins your agents use</span></div></div>
+      <div class="seg" role="group" aria-label="Show"><button data-vtab="keys" aria-pressed="${VT.tab === "keys"}"><i data-lucide="key-round" class="ic"></i>Keys</button><button data-vtab="logins" aria-pressed="${VT.tab === "logins"}"><i data-lucide="lock" class="ic"></i>Logins</button></div></div>
+    <div class="vault" id="vbody"><div class="hint">Loading…</div></div>`;
+  icons(); vaultLoad().then(vaultRender);
+}
+function vaultRender() {
+  const el = $("#vbody"), D = VT.data; if (!el || !D) return;
+  const m = $("#vmeta"); if (m) m.innerHTML = `<span class="st-muted">Values are kept in ${esc(D.where)}</span>${D.backend === "file" ? `<span class="sep">·</span><span class="st-needs">not encrypted</span>` : ""}`;
+  const keys = VT.tab === "keys", list = keys ? D.keys : D.logins;
+  let h = `<div class="vintro">${keys
+    ? "Agents get these as environment variables in their shell when they start ($STRIPE_SECRET_KEY and so on). A project's key wins over an account's, which wins over one for every agent. Use dev and test keys: an agent can print what it has."
+    : "Agents sign in with these through Loft: it types the username, password and 2FA code into their browser or phone, so they never see them. Pick which logins a task gets in New task; with none picked, an agent gets every login for its project and account."}</div>`;
+  h += VT.adding ? vaultForm(keys, null) : `<div class="row"><button class="btn secondary" data-vadd><i data-lucide="plus" class="ic"></i>${keys ? "Add a key" : "Add a login"}</button></div>`;
+  h += list.length ? list.map(x => VT.edit === x.id ? vaultForm(keys, x) : `<div class="vrow" data-vid="${esc(x.id)}">
+      <span class="grow"><span class="vn${keys ? " mono" : ""}">${esc(keys ? x.name : x.label)}</span><span class="st-muted">${keys ? "" : esc(x.username) + (x.url ? " · " + esc(hostOf(x.url)) : "") + (x.totp ? " · 2FA" : "") + " · "}${esc(scopeText(x.scope))}${x.note ? " · " + esc(x.note) : ""}</span></span>
+      <span class="vval mono" id="vv-${esc(x.id)}">••••••••</span>
+      <button class="ibtn" data-vreveal="${esc(x.id)}" title="${keys ? "Show the value" : "Show the password"}" aria-label="Show"><i data-lucide="eye" class="ic"></i></button>
+      <button class="ibtn" data-vcopy="${esc(x.id)}" title="${keys ? "Copy the value" : "Copy the password"}" aria-label="Copy"><i data-lucide="copy" class="ic"></i></button>
+      <button class="ibtn" data-vedit="${esc(x.id)}" title="Edit" aria-label="Edit"><i data-lucide="pencil" class="ic"></i></button>
+      <button class="ibtn" data-vdel="${esc(x.id)}" title="Remove" aria-label="Remove"><i data-lucide="trash-2" class="ic"></i></button></div>`).join("")
+    : `<div class="hint">${keys ? "No keys yet. Add the API keys and tokens your dev servers and builds need." : "No logins yet. Add test users (admin, a customer, …) for the apps your agents work on."}</div>`;
+  el.innerHTML = h; icons();
+  const f = $("#vf1"); if (f && VT.adding) f.focus();
+}
+function vaultForm(keys, x) {
+  const ed = !!x, sid = ed ? "vfs-" + x.id : "vfs";
+  if (keys) return `<div class="vform" data-vform="${ed ? esc(x.id) : ""}">
+      <input id="vf1" class="mono" placeholder="NAME, e.g. STRIPE_SECRET_KEY" value="${ed ? esc(x.name) : ""}" spellcheck="false" autocomplete="off" aria-label="Name">
+      <input id="vf2" type="password" class="mono" placeholder="${ed ? "New value (leave empty to keep it)" : "Value"}" autocomplete="new-password" aria-label="Value">
+      ${scopeSelect(sid, x?.scope)}<input id="vf3" placeholder="Note (optional)" value="${ed ? esc(x.note || "") : ""}" aria-label="Note">
+      <button class="btn primary" data-vsave>${ed ? "Save" : "Add"}</button><button class="btn quiet" data-vcancel>Cancel</button></div>`;
+  return `<div class="vform" data-vform="${ed ? esc(x.id) : ""}">
+      <input id="vf1" placeholder="Name, e.g. Staging admin" value="${ed ? esc(x.label) : ""}" aria-label="Name">
+      <input id="vf4" placeholder="Sign-in page, e.g. https://staging.app.com/login" value="${ed ? esc(x.url || "") : ""}" class="mono" spellcheck="false" aria-label="Sign-in page">
+      <input id="vf5" placeholder="Username or email" value="${ed ? esc(x.username) : ""}" autocomplete="off" spellcheck="false" aria-label="Username">
+      <input id="vf2" type="password" placeholder="${ed ? "New password (leave empty to keep it)" : "Password"}" autocomplete="new-password" aria-label="Password">
+      <input id="vf6" type="password" placeholder="${ed && x.totp ? "2FA setup key saved (paste a new one to replace)" : "2FA setup key (optional)"}" autocomplete="off" class="mono" aria-label="2FA setup key">
+      ${scopeSelect(sid, x?.scope)}<input id="vf3" placeholder="Note (optional)" value="${ed ? esc(x.note || "") : ""}" aria-label="Note">
+      <button class="btn primary" data-vsave>${ed ? "Save" : "Add"}</button><button class="btn quiet" data-vcancel>Cancel</button></div>`;
+}
+async function vaultReveal(id) {
+  const kind = VT.tab === "keys" ? "keys" : "logins";
+  return api(`/api/vault/${kind}/${encodeURIComponent(id)}/reveal`, {});
+}
+async function vaultClick(t) {
+  if (t.dataset.vtab) { VT.tab = t.dataset.vtab; store.set("loft.vaultTab", VT.tab); VT.adding = false; VT.edit = null; document.querySelectorAll("[data-vtab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.vtab === VT.tab)); return vaultRender(); }
+  if (t.hasAttribute("data-vadd")) { VT.adding = true; VT.edit = null; return vaultRender(); }
+  if (t.hasAttribute("data-vcancel")) { VT.adding = false; VT.edit = null; return vaultRender(); }
+  if (t.dataset.vedit) { VT.edit = t.dataset.vedit; VT.adding = false; return vaultRender(); }
+  if (t.dataset.vreveal) { const el = $("#vv-" + t.dataset.vreveal); if (!el) return;
+    if (el.dataset.shown) { el.textContent = "••••••••"; delete el.dataset.shown; return; }
+    try { const r = await vaultReveal(t.dataset.vreveal); el.textContent = r.value + (r.code ? `  ·  2FA ${r.code}` : ""); el.dataset.shown = "1"; setTimeout(() => { if (el.dataset.shown) { el.textContent = "••••••••"; delete el.dataset.shown; } }, 20000); } catch (e) { toast(e.message, true); } return; }
+  if (t.dataset.vcopy) { try { const r = await vaultReveal(t.dataset.vcopy); await navigator.clipboard.writeText(r.value); toast("Copied"); } catch (e) { toast(e.message || "Couldn't copy", true); } return; }
+  if (t.dataset.vdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.title = "Click again to remove it"; return; }
+    try { const kind = VT.tab === "keys" ? "keys" : "logins"; VT.data = await apiM("DELETE", `/api/vault/${kind}/${encodeURIComponent(t.dataset.vdel)}`); toast(VT.data.message); vaultRender(); } catch (e) { toast(e.message, true); } return; }
+  if (t.hasAttribute("data-vsave")) {
+    const f = t.closest(".vform"), id = f.dataset.vform, keys = VT.tab === "keys", v = k => ($("#" + k)?.value ?? "");
+    const scope = scopeOf(id ? "vfs-" + id : "vfs");
+    const body = keys ? { name: v("vf1").trim(), value: v("vf2"), scope, note: v("vf3").trim() }
+      : { label: v("vf1").trim(), url: v("vf4").trim(), username: v("vf5").trim(), password: v("vf2"), totp: v("vf6").trim(), scope, note: v("vf3").trim() };
+    if (id) { if (!body.value) delete body.value; if (!body.password) delete body.password; if (!body.totp) delete body.totp; }
+    t.disabled = true;
+    try { const kind = keys ? "keys" : "logins"; const r = id ? await apiM("PATCH", `/api/vault/${kind}/${encodeURIComponent(id)}`, body) : await api(`/api/vault/${kind}`, body);
+      toast(r.message); VT.data = r; VT.adding = false; VT.edit = null; vaultRender(); } catch (e) { toast(e.message, true); t.disabled = false; }
+    return;
+  }
+}
+document.addEventListener("keydown", e => { if (e.target?.closest?.(".vform") && e.key === "Enter") { e.preventDefault(); e.target.closest(".vform").querySelector("[data-vsave]")?.click(); } if (e.target?.closest?.(".vform") && e.key === "Escape") { e.stopPropagation(); VT.adding = false; VT.edit = null; vaultRender(); } }, true);
+
+/* New task: which logins it may sign in with, and whether it gets an Android phone */
+let NL = { picked: null, phone: null };
+function newExtras() {
+  const all = VT.data?.logins || [], pj = newProj, acc = newAcct;
+  const fits = all.filter(x => { const s = x.scope || { kind: "global" }; return s.kind === "global" || (s.kind === "project" && s.id === pj) || (s.kind === "account" && (acc === "auto" || s.id === acc)); });
+  const chips = fits.map(x => `<button data-nlogin="${esc(x.id)}" aria-pressed="${NL.picked ? NL.picked.includes(x.id) : true}" title="${esc(x.username)}">${esc(x.label)}</button>`).join("");
+  return `${fits.length ? `<span class="label">Logins</span><div class="dchips" role="group" aria-label="Logins it may sign in with" id="nlogins">${chips}</div>` : ""}
+    <span class="label">Phone</span><div class="seg" role="group" aria-label="Android phone"><button data-nphone="auto" aria-pressed="${NL.phone === null}" title="Mobile app folders (Flutter, React Native, Android) get one">Auto</button><button data-nphone="on" aria-pressed="${NL.phone === true}">Android phone</button><button data-nphone="off" aria-pressed="${NL.phone === false}">None</button></div>`;
+}
+function newExtrasPaint() { const el = $("#nextras"); if (el) { el.innerHTML = newExtras(); icons(); } }
+function newExtrasBody() {
+  const out = {}; const all = (VT.data?.logins || []).map(x => x.id), chips = [...document.querySelectorAll("[data-nlogin]")];
+  if (NL.picked && chips.length) out.logins = NL.picked.filter(id => all.includes(id));
+  if (NL.phone !== null) out.phone = NL.phone;
+  return out;
+}
+function newExtrasClick(t) {
+  if (t.dataset.nlogin) { const ids = [...document.querySelectorAll("[data-nlogin]")].map(b => b.dataset.nlogin);
+    const cur = NL.picked || ids.slice(); const i = cur.indexOf(t.dataset.nlogin); if (i >= 0) cur.splice(i, 1); else cur.push(t.dataset.nlogin);
+    NL.picked = cur; return newExtrasPaint(); }
+  if (t.dataset.nphone) { NL.phone = { auto: null, on: true, off: false }[t.dataset.nphone]; return newExtrasPaint(); }
+}
+
 /* ---------- voice ---------- */
 let rec = null, recTarget = null, chunks = [];
 async function toggleVoice(target) {
@@ -1490,7 +1717,8 @@ async function submitNew(start) {
   if (!cwd) { $("#nerr").textContent = "Pick the project folder it works in."; $("#ndir").focus(); return; }
   const b = $(start ? "#nStart" : "#nTodo"); b.disabled = true;
   try {
-    const r = await api("/api/cards", { prompt, cwd, account: newAcct, start, title: "", ...(newProj ? { project: newProj } : {}) });
+    const r = await api("/api/cards", { prompt, cwd, account: newAcct, start, title: "", ...(newProj ? { project: newProj } : {}), ...newExtrasBody() });
+    NL = { picked: null, phone: null };
     if (!newProj && newAcct !== "auto") store.set("loft.dir." + newAcct, cwd); drafts.new = ""; drafts.dir = undefined; toast(r.message);
     const m = /started ([0-9a-f]{8})/.exec(r.message || ""); if (m) return waitOpen(m[1]);
     setSel(null);
@@ -1520,7 +1748,9 @@ function openSettings(btn) {
   const m = $("#menu");
   m.innerHTML = `<button data-go="accounts"><i data-lucide="users" class="ic"></i>Accounts<kbd style="margin-left:auto">,</kbd></button>
     <button data-go="projects"><i data-lucide="layers" class="ic"></i>Projects<kbd style="margin-left:auto">p</kbd></button>
-    <button data-go="organize"><i data-lucide="layout-list" class="ic"></i>How to organize…</button>`;
+    <button data-go="organize"><i data-lucide="layout-list" class="ic"></i>How to organize…</button>
+    <button data-go="vault"><i data-lucide="key-round" class="ic"></i>Vault: keys and logins</button>
+    <button data-go="devices"><i data-lucide="tablet-smartphone" class="ic"></i>Devices</button>`;
   const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = Math.max(8, innerWidth - r.right) + "px"; m.style.left = "auto"; m.className = "menu"; m.hidden = false; m.dataset.for = "settings"; icons();
 }
 function go(where) { closeMenu(); if (where === "accounts") AC = null; if (where === "organize") { orgPick = null; orgFolders = null; } $("#pane").dataset.key = ""; setSel(where); }
@@ -2053,6 +2283,12 @@ document.addEventListener("click", async e => {
   if (t.hasAttribute("data-billsto")) { const id = sel; closeMenu(); return openPop(id, document.querySelector("[data-menu]") || t); }
   if (t.dataset.agentbr) { e.stopPropagation(); brView[t.dataset.agentbr] = true; if (sel === t.dataset.agentbr) { $("#pane").dataset.key = ""; return render(); } return setSel(t.dataset.agentbr); }
   if (t.hasAttribute("data-sites")) return go("browser");
+  if (t.hasAttribute("data-devices")) return go("devices");
+  if (t.hasAttribute("data-vault")) return go("vault");
+  if (t.dataset.agentphone) { e.stopPropagation(); DV.serial = t.dataset.agentphone; disconnectDevice(); return go("devices"); }
+  if (t.dataset.dpick || t.dataset.dboot || t.dataset.dstop || t.dataset.dfree || t.dataset.dv) return devClick(t);
+  if (t.dataset.vtab || t.dataset.vreveal || t.dataset.vcopy || t.dataset.vedit || t.dataset.vdel || t.hasAttribute("data-vadd") || t.hasAttribute("data-vcancel") || t.hasAttribute("data-vsave")) return vaultClick(t);
+  if (t.dataset.nlogin || t.dataset.nphone) return newExtrasClick(t);
   if (t.dataset.sw || t.dataset.sacc || t.dataset.site || t.dataset.ssave || t.dataset.sdel) return sitesClick(t);
   if (t.dataset.archdone) { e.stopPropagation(); return archiveAll(t); }
   if (t.hasAttribute("data-assist")) return setSel(sel === "assistant" ? null : "assistant");

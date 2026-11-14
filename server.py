@@ -53,7 +53,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, assistant as AS, board as B, browser as BR, core as C, paths, projects as P, prompts as PR, sites as ST, titles as TI, transcript as TR, usage as U, webapi  # noqa: E402
+from loft import accounts as A, agenttools as AT, assistant as AS, board as B, browser as BR, core as C, mobile as M, paths, projects as P, prompts as PR, sites as ST, titles as TI, transcript as TR, usage as U, vault as V, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -574,12 +574,24 @@ def public_card(c):
     c["updated"] = c["updated"].isoformat() if c["updated"] else None
     if c["kind"] == "agent":
         c["browser"] = browser_badge(c["id"])
+        c["phone"] = _PHONES.get(c["id"])
     c["cwd"] = c["cwd"].replace(str(HOME), "~")
     c["folder"] = c["cwd"]
     return c
 
 
+_PHONES = {}   # agent id -> serial of the phone it drives (refreshed with each snapshot)
+
+
 def snapshot():
+    try:
+        _PHONES.clear(); _PHONES.update({l["agent"]: s for s, l in M.leases().items() if l.get("agent")})
+    except Exception:
+        pass
+    return _snapshot()
+
+
+def _snapshot():
     cards = B.load_cards(show_all_done=True)
     for c in cards:
         public_card(c)
@@ -811,7 +823,9 @@ def act(cid, action, body):
     """Run one card action. Returns (status, message)."""
     if action == "create":
         code, msg, jid, todo = B.create_task(body.get("prompt"), body.get("cwd"), body.get("account") or None,
-                                             body.get("project") or None, body.get("title") or "", bool(body.get("start")))
+                                             body.get("project") or None, body.get("title") or "", bool(body.get("start")),
+                                             logins=body.get("logins") if isinstance(body.get("logins"), list) else None,
+                                             phone=body.get("phone") if isinstance(body.get("phone"), bool) else None)
         if code == 200 and jid:
             TI.after_launch(jid, todo, log=log)          # title + summary arrive in a few seconds
         elif code == 200 and todo:
@@ -923,6 +937,8 @@ GATE_TRIES = 3   # failed runs sent back to the agent before Loft stops and leav
 
 def browser_badge(jid):
     rec, res = BR.record(jid), BR.results(jid)
+    if rec and rec.get("browser") is False:   # tools only (phone, sign-in, keys): no browser to show
+        rec = None
     if not rec and not res:
         return None
     out = {"mcp": bool(rec and rec.get("mcp")), "running": jid in _GATING}
@@ -1027,8 +1043,24 @@ def browser_route(jid, action, body):
     return 400, {"message": f"Unknown action {action}"}
 
 
+def _alive(jid):
+    c = find_card(jid)
+    return bool(c and c["kind"] == "agent")
+
+
 def agent_route(card, action, body):
     jid, scope = card["id"], BR.scope_of(card)
+    if action.startswith("phone-") or action == "sign-in":
+        if body is None:
+            return 405, {"message": "POST this."}
+        rec = BR.record(jid) or {}
+        if action == "sign-in":
+            if not rec.get("logins"):
+                return 403, {"message": "This task has no logins."}
+            return AT.sign_in(jid, rec, body, _alive)
+        if not rec.get("phone"):
+            return 403, {"message": "This agent has no phone."}
+        return AT.phone(jid, action[6:], body, _alive)
     if action == "checks":
         return 200, {"checks": BR.checks_for(scope), "last": BR.results(jid)}
     if body is None:
@@ -1061,6 +1093,89 @@ def agent_route(card, action, body):
 # ------------------------------------------------------------------ signed-in sites
 # Per Loft account: a list of sites and one signed-in Chrome profile (loft/sites.py). Loft › Browser
 # streams it over /ws/sites/<account>; agents on the account start with a copy of it.
+# ------------------------------------------------------------------ phones (Loft › Devices)
+def mobile_list():
+    st = M.status()
+    names = {}
+    for d in st["devices"]:
+        if d.get("agent"):
+            c = find_card(d["agent"])
+            names[d["agent"]] = c["name"] if c else None
+            if not c:
+                d["agent"] = None
+    st["agentNames"] = names
+    return st
+
+
+def mobile_route(method, parts, body):
+    """GET /api/mobile · POST /api/mobile/boot {avd} · POST /api/mobile/stop {serial} · POST /api/mobile/free {serial}"""
+    if method == "GET":
+        return 200, mobile_list()
+    act_ = parts[2] if len(parts) > 2 else ""
+    if act_ == "boot":
+        serial = M.boot((body.get("avd") or "").strip())
+        def wait():
+            try:
+                M.wait_booted(serial)
+            except Exception as e:
+                log(f"emulator {serial}: {e}")
+        threading.Thread(target=wait, daemon=True).start()
+        return 200, {"message": "Starting the emulator", "serial": serial, **mobile_list()}
+    if act_ == "stop":
+        return 200, {"message": M.stop(M.check_serial(body.get("serial"))), **mobile_list()}
+    if act_ == "free":
+        M.release_serial(M.check_serial(body.get("serial")))
+        return 200, {"message": "Freed: the next agent that needs a phone gets it", **mobile_list()}
+    return 404, {"message": "not found"}
+
+
+# ------------------------------------------------------------------ vault (Loft › Vault): keys and logins
+def vault_route(method, parts, body):
+    """Desktop only. /api/vault (GET) · /api/vault/<keys|logins> (POST) · /api/vault/<kind>/<id> (PATCH, DELETE)
+    · POST /api/vault/<kind>/<id>/reveal -> the secret, for the desktop page to show or copy."""
+    if method == "GET" and len(parts) == 2:
+        return 200, V.public()
+    kind = parts[2] if len(parts) > 2 else ""
+    iid = parts[3] if len(parts) > 3 else None
+    if kind not in ("keys", "logins"):
+        return 404, {"message": "not found"}
+    if method == "POST" and not iid:
+        if kind == "keys":
+            k = V.add_key(body.get("name"), body.get("value"), body.get("scope"), body.get("note", ""))
+            return 200, {"message": f"Saved {k['name']}", "key": k, **V.public()}
+        lg = V.add_login(body.get("label"), body.get("username"), body.get("password"), body.get("url", ""),
+                         body.get("scope"), body.get("totp", ""), body.get("note", ""))
+        return 200, {"message": f"Saved {lg['label']}", "login": lg, **V.public()}
+    if method == "POST" and len(parts) == 5 and parts[4] == "reveal":
+        if kind == "keys":
+            v = V.key_value(iid)
+            return (200, {"value": v}) if v is not None else (404, {"message": "Not in the keychain."})
+        pw, code = V.login_secret(iid)
+        return (200, {"value": pw, "code": code}) if pw is not None else (404, {"message": "Not in the keychain."})
+    if method == "PATCH" and iid:
+        if kind == "keys":
+            V.update_key(iid, body.get("name"), body.get("value"), body.get("scope"), body.get("note"))
+        else:
+            V.update_login(iid, body.get("label"), body.get("username"), body.get("password"), body.get("url"),
+                           body.get("scope"), body.get("totp"), body.get("note"))
+        return 200, {"message": "Saved", **V.public()}
+    if method == "DELETE" and iid:
+        (V.remove_key if kind == "keys" else V.remove_login)(iid)
+        return 200, {"message": "Removed", **V.public()}
+    return 404, {"message": "not found"}
+
+
+def _guarded(fn, *a):
+    try:
+        return fn(*a)
+    except LookupError as e:
+        return 404, {"message": str(e)}
+    except ValueError as e:
+        return 400, {"message": str(e)}
+    except Exception as e:
+        return 500, {"message": f"{type(e).__name__}: {e}"}
+
+
 def sites_list():
     cfg = A.load()
     agents = []
@@ -1188,7 +1303,7 @@ class H(BaseHTTPRequestHandler):
         if not tok:  # EventSource can't send headers; it passes ?t= (GET /api/events only)
             from urllib.parse import parse_qs
             u = urlparse(self.path)
-            if u.path == "/api/events" or u.path.startswith(("/ws/term/", "/ws/browser/", "/ws/sites/")):
+            if u.path == "/api/events" or u.path.startswith(("/ws/term/", "/ws/browser/", "/ws/sites/", "/ws/mobile/")):
                 tok = (parse_qs(u.query).get("t") or [""])[0]
         return secrets.compare_digest(tok, TOKEN)
 
@@ -1297,6 +1412,12 @@ class H(BaseHTTPRequestHandler):
             return self.browser_ws(path.rsplit("/", 1)[-1])
         if path.startswith("/ws/sites/"):
             return self.sites_ws(path.rsplit("/", 1)[-1])
+        if path.startswith("/ws/mobile/"):
+            return self.mobile_ws(path.rsplit("/", 1)[-1])
+        if path == "/api/mobile":
+            return self._send(*_guarded(mobile_route, "GET", parts, {}))
+        if path == "/api/vault":   # desktop only: never the phone
+            return self._send(*_guarded(vault_route, "GET", parts, {})) if self._admin() else self._send(404, {"error": "not found"})
         if path == "/api/sites" or path.startswith("/api/sites/"):
             return self._send(*sites_route("GET", parts, {}, remote=self.device is not None))
         if path.startswith("/api/browser/"):   # desktop only: shows local ports and check results
@@ -1632,6 +1753,80 @@ class H(BaseHTTPRequestHandler):
         finally:
             v.close()
 
+    # Loft › Devices: a phone's screen (loft/mobile.py). Binary out = JPEG frames; text out =
+    # {"type": "hello"|"size", w, h} | {"type": "gone"} | {"type": "toast", text, err}. Text in =
+    # {"type": "pointer", kind: down|up|wheel, x, y (0..1), dy} | {"type": "key", text | key} |
+    # {"type": "button", name: back|home|recents|rotate|power|volume_up|volume_down}.
+    def mobile_ws(self, serial):
+        if not self.headers.get("Sec-WebSocket-Key"):
+            return self._send(400, {"error": "websocket only"})
+        try:
+            M.check_serial(serial)
+        except ValueError:
+            return self._send(404, {"error": "no such device"})
+        self._ws_accept()
+        lock = threading.Lock()
+
+        def frame(b):
+            try:
+                self._ws_send(2, b, lock)
+            except OSError:
+                pass
+
+        def ev(d):
+            try:
+                self._ws_send(1, json.dumps(d).encode(), lock)
+            except OSError:
+                pass
+
+        try:
+            if not M.online(serial):
+                raise RuntimeError("That device isn't connected.")
+            if serial.startswith("emulator-") and not M.booted(serial):
+                ev({"type": "toast", "text": "Waiting for the emulator to finish starting…"})
+                M.wait_booted(serial)
+            scr = M.Screen(serial, frame, ev)
+        except Exception as e:
+            ev({"type": "toast", "err": True, "text": f"Couldn't show the device: {e}"})
+            try:
+                self._ws_send(8, b"", lock)
+            except OSError:
+                pass
+            return
+        held = (M.leases().get(serial) or {}).get("agent")
+        ev({"type": "hello", "serial": serial, "w": scr.w, "h": scr.h, "agent": held})
+        threading.Timer(1.0, scr.poke).start()
+        state = {}
+        try:
+            while True:
+                op, data = self._ws_read()
+                if op is None or op == 8:
+                    break
+                if op == 9:
+                    self._ws_send(10, data, lock); continue
+                if op != 1:
+                    continue
+                try:
+                    msg = json.loads(data)
+                    t = msg.get("type")
+                    if t == "pointer":
+                        scr.pointer(msg, state)
+                    elif t == "key":
+                        scr.key(msg)
+                    elif t == "button":
+                        name = msg.get("name")
+                        if name not in ("back", "home", "recents", "rotate", "power", "volume_up", "volume_down"):
+                            raise ValueError("Unknown button.")
+                        M.key(serial, name)
+                except (OSError, ConnectionError):
+                    raise
+                except Exception as e:
+                    ev({"type": "toast", "err": True, "text": str(e)})
+        except (OSError, ConnectionError, ValueError):
+            pass
+        finally:
+            scr.close()
+
     @staticmethod
     def _browser_comment(card, v, msg):
         note = (msg.get("note") or "").strip()
@@ -1755,6 +1950,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(code, payload)
         if parts[:2] == ["api", "sites"]:
             return self._send(*sites_route("DELETE", parts, {}, remote=self.device is not None))
+        if parts[:2] == ["api", "vault"] and self._admin():
+            return self._send(*_guarded(vault_route, "DELETE", parts, {}))
         if self._admin() and len(parts) == 3 and parts[:2] == ["api", "devices"]:
             ok = revoke_device(parts[2])
             return self._send(200 if ok else 404, {"message": "Revoked" if ok else "No such device"})
@@ -1773,6 +1970,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(code, payload)
         if parts[:2] == ["api", "sites"]:
             return self._send(*sites_route("PATCH", parts, body, remote=self.device is not None))
+        if parts[:2] == ["api", "vault"] and self._admin():
+            return self._send(*_guarded(vault_route, "PATCH", parts, body))
         return self._send(404, {"error": "not found"})
 
     def agent_api(self, path, body):
@@ -1828,6 +2027,10 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 code, payload = 500, {"message": f"{type(e).__name__}: {e}"}
             return self._send(code, payload)
+        if parts[:2] == ["api", "vault"]:
+            return self._send(*_guarded(vault_route, "POST", parts, body)) if self._admin() else self._send(404, {"error": "not found"})
+        if parts[:2] == ["api", "mobile"]:
+            return self._send(*_guarded(mobile_route, "POST", parts, body))
         if parts[:2] == ["api", "browser"] and len(parts) == 4:
             if not self._admin():
                 return self._send(404, {"error": "not found"})
