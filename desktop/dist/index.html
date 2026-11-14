@@ -4,17 +4,19 @@
 <meta charset="utf-8">
 <title>Loft</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0F1012; color: #9A9EA6; font: 13px/1.5 system-ui, sans-serif; }
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; height: 100%; background: #171C26; color: #A1A1A8; font: 13px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+  @media (prefers-color-scheme: light) { html, body { background: #E1E8F2; color: #5F5F66; } svg path { fill: #1D1D1F; stroke: #1D1D1F; } }
   body { display: grid; place-items: center; }
   .box { text-align: center; max-width: 520px; padding: 24px; }
   svg { width: 56px; height: 56px; opacity: .9; }
   p { margin: 14px 0 0; }
-  .err { color: #F0685A; white-space: pre-wrap; user-select: text; }
+  .err { color: #FF453A; white-space: pre-wrap; user-select: text; }
 </style>
 </head>
 <body>
 <div class="box">
-  <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#5B8DFF"/><circle cx="41.5" cy="38" r="7" fill="#46C07D"/></svg>
+  <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7L57 27V51C57 54.9 53.9 58 50 58H14C10.1 58 7 54.9 7 51V27L32 7Z" fill="#EDEEF0" stroke="#EDEEF0" stroke-width="4" stroke-linejoin="round"/><circle cx="22.5" cy="38" r="7" fill="#0A84FF"/><circle cx="41.5" cy="38" r="7" fill="#30D158"/></svg>
   <p id="msg">Starting Loft…</p>
 </div>
 <script>
