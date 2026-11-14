@@ -43,8 +43,8 @@ DEFAULT_CREDS = "default"
 # Color names are the ones `claude agents` and /color understand, so the color we
 # write into state.json shows up there too. Hex values are Loft's palette.
 COLORS = {
-    "blue": "#5B8DFF", "green": "#46C07D", "purple": "#A98BFF", "cyan": "#3EC1D3",
-    "pink": "#F17DB8", "orange": "#F2924A", "yellow": "#E3CF5B", "red": "#F0685A",
+    "blue": "#0A84FF", "green": "#30D158", "purple": "#BF5AF2", "cyan": "#64D2FF",
+    "pink": "#FF375F", "orange": "#FF9F0A", "yellow": "#FFD60A", "red": "#FF453A",
 }
 PALETTE = ["blue", "green", "purple", "cyan", "pink", "orange", "yellow", "red"]
 
