@@ -710,6 +710,9 @@ def switch_route(card, body):
     return (200 if r["ok"] else 409), r["message"]
 
 
+_last_sweep = [0.0]
+
+
 def pending_loop(every=3.0):
     """Apply queued account switches once their agent leaves Working, then send queued
     prompts and start queued todos that can go now."""
@@ -728,6 +731,12 @@ def pending_loop(every=3.0):
             check_gate()
         except Exception as e:
             print(f"browser checks: {type(e).__name__}: {e}", flush=True)
+        if time.time() - _last_sweep[0] >= TI.SWEEP_EVERY:   # titles for agents Loft didn't start
+            _last_sweep[0] = time.time()
+            try:
+                TI.sweep(B.load_cards(show_all_done=False), log=lambda m: print(m, flush=True))
+            except Exception as e:
+                print(f"title sweep: {type(e).__name__}: {e}", flush=True)
 
 
 def run_queue():

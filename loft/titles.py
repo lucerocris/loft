@@ -10,6 +10,10 @@ Where it is kept:
   todo    the todo record in todos.json ("title", "summary", "titleSource")
 
 A title the user typed is never replaced by a generated one; only its summary is filled in.
+
+Agents Loft didn't start (a terminal `claude --bg`, another agent, a scheduled run) are picked
+up by sweep(), which the server runs every SWEEP_EVERY seconds: anything without a summary
+gets described once it has a prompt, a few at a time, at most MAX_TRIES times per agent.
 """
 import json
 import os
@@ -34,6 +38,10 @@ SYSTEM = (
 )
 SCHEMA = json.dumps({"type": "object", "properties": {"title": {"type": "string"}, "summary": {"type": "string"}},
                      "required": ["title", "summary"]})
+
+SWEEP_EVERY = 20       # seconds between sweeps (server.pending_loop)
+SWEEP_BATCH = 3        # model calls a sweep may start
+MAX_TRIES = 2          # per agent, counted in loft-meta.json "describeTries" (survives restarts)
 
 _BUSY = set()          # ids being described right now (one model call per card at a time)
 _LOCK = threading.Lock()
@@ -225,3 +233,38 @@ def after_launch(jid, todo, log=print):
     card = {"id": jid, "kind": "agent", "name": todo.get("title") or jid, "account": todo.get("account"),
             "live": True, "summary": None}
     describe_async(card, keep_title=src == "user", log=log)
+
+
+def sweep(cards, log=print, batch=SWEEP_BATCH):
+    """Describe the newest agents that have no summary yet (started outside Loft, or whose
+    first describe never landed). Returns how many describes it started."""
+    started = 0
+    todo = [c for c in cards if c["kind"] == "agent" and not c.get("summary") and not c.get("assistant")]
+    todo.sort(key=lambda c: c["updated"].timestamp() if c.get("updated") else 0, reverse=True)
+    for c in todo:
+        if started >= batch:
+            break
+        with _LOCK:
+            if c["id"] in _BUSY:
+                continue
+        meta = C.meta_read(c["id"])
+        tries = int(meta.get("describeTries") or 0)
+        if meta.get("summary") or tries >= MAX_TRIES:
+            continue
+        prompt, _ = first_prompt(c["id"])
+        if not prompt:
+            continue                     # not given a task yet: look again next sweep
+        keep = None
+        if not meta.get("titleSource"):  # a name the user gave the agent in Claude Code stays
+            try:
+                st = json.loads((C.jobs_dir() / c["id"] / "state.json").read_text())
+                keep = True if st.get("nameSource") == "user" else None
+            except (OSError, ValueError):
+                pass
+        try:
+            C.meta_write(c["id"], describeTries=tries + 1)
+        except OSError:
+            continue
+        if describe_async(c, keep_title=keep, log=log):
+            started += 1
+    return started

@@ -148,6 +148,34 @@ class Titles(AssistantEnv):
         self.assertEqual(self.card("aaaa0001")["name"], "aaaa0001")
         self.assertIsNone(self.card("aaaa0001")["summary"])
 
+    def test_sweep_describes_agents_started_elsewhere(self):
+        self.agent("s0000001", intent="login is slow")
+        self.agent("s0000002", intent="dark mode")
+        C.meta_write("s0000002", summary="Already has one")
+        self.agent("s0000003")                     # no prompt yet: left for a later sweep
+        cards = B.load_cards(show_all_done=False)
+        self.assertEqual(TI.sweep(cards, log=lambda m: None), 1)
+        for _ in range(100):
+            if self.card("s0000001").get("summary"):
+                break
+            time.sleep(0.05)
+        self.assertEqual(self.card("s0000001")["name"], "Fix the login bug")
+        self.assertEqual(self.card("s0000001")["summary"], "Fixes the login bug in the app.")
+        self.assertIsNone(self.card("s0000003")["summary"])
+        self.assertEqual(TI.sweep(B.load_cards(show_all_done=False), log=lambda m: None), 0)
+
+    def test_sweep_gives_up_after_max_tries(self):
+        self.agent("s0000004", intent="flaky tests")
+        self.mode.write_text("fail")
+        for _ in range(TI.MAX_TRIES + 1):
+            TI.sweep(B.load_cards(show_all_done=False), log=lambda m: None)
+            for _ in range(100):
+                if "s0000004" not in TI._BUSY:
+                    break
+                time.sleep(0.05)
+        self.assertEqual(C.meta_read("s0000004")["describeTries"], TI.MAX_TRIES)
+        self.assertEqual(len([c for c in self.calls("-p") if "flaky" in c["argv"][-1]]), TI.MAX_TRIES)
+
     def test_todo_summary_carries_into_the_agent(self):
         code, msg, _, todo = B.create_task("search is slow", str(self.folder))
         TI.describe({**todo, "kind": "todo", "name": todo["title"]})
