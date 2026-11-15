@@ -978,9 +978,24 @@ def check_gate():
         if c["kind"] != "agent":
             continue
         prev, _LAST_COL[c["id"]] = _LAST_COL.get(c["id"]), c["col"]
+        if c["col"] == "running" and prev != "running":
+            threading.Thread(target=_revive_browser, args=(c["id"],), daemon=True).start()
         if prev == "running" and c["col"] in ("needs", "done") and allc.get(BR.scope_of(c)) and c["id"] not in _GATING:
             _GATING.add(c["id"])
             threading.Thread(target=lambda c=c: _log_gate(c), daemon=True).start()
+
+
+def _revive_browser(jid):
+    """An agent started working and its browser is gone (Loft or the computer restarted, Chrome crashed):
+    start it again on the same port, so the agent's browser tools work and its page shows in Loft."""
+    rec = BR.record(jid)
+    if not rec or not rec.get("port") or BR.alive(rec["port"]):
+        return
+    try:
+        BR.ensure(jid)
+        print(f"browser {jid}: restarted on :{rec['port']}", flush=True)
+    except Exception as e:
+        print(f"browser {jid}: couldn't restart: {e}", flush=True)
 
 
 def _log_gate(card):
@@ -1484,7 +1499,7 @@ class H(BaseHTTPRequestHandler):
                 pass
             return
         BR.subscribe(jid, ev)   # recording steps, whoever is recording (you or the agent)
-        ev({"type": "hello", "mcp": bool(rec.get("mcp")), "ports": BR.dev_ports(card["cwd"]),
+        ev({"type": "hello", "mcp": bool(rec.get("mcp")), "web": rec.get("web", True), "ports": BR.dev_ports(card["cwd"]),
             "login": bool(BR.login_for(scope)), "recording": BR.recording(jid)})
         try:
             while True:

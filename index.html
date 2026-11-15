@@ -1168,7 +1168,20 @@ function checksBadge(c) {
   if (k.skipped) return `<span class="sep">·</span><span class="st-muted" title="${esc(k.skipped)}">checks skipped</span>`;
   return `<span class="sep">·</span><span class="${k.ok ? "ck-ok" : "ck-bad"}" title="Recorded browser checks">${k.ok ? "✓" : "✗"} ${k.passed}/${k.total} checks${!k.ok && k.attempts > 3 ? " · gave up, needs you" : ""}</span>`;
 }
-function disconnectBrowser() { if (BR.ws) { const w = BR.ws; BR.ws = null; try { w.close(); } catch {} } if (BR.blob) URL.revokeObjectURL(BR.blob); BR = { ...BR, id: null, blob: null, recording: false, expect: false, comment: false, take: false, errs: [] }; }
+function disconnectBrowser() { if (BR.ws) { const w = BR.ws; BR.ws = null; try { w.close(); } catch {} } if (BR.blob) URL.revokeObjectURL(BR.blob); BR = { ...BR, id: null, blob: null, hint: "", recording: false, expect: false, comment: false, take: false, errs: [] }; }
+const brBlank = u => !/^(https?|file):/.test(u || "");
+// The cover over the picture. A blank tab still streams a (white) frame: while the tab is blank keep the
+// hint (BR.hint: what to do next) up instead of showing a white screen; once a real page is on, show it.
+function brCover() {
+  const cv = $("#bcover"); if (!cv || !BR.ws) return;
+  if (BR.id?.startsWith("sites:") && SW.data?.browser?.window) return;   // windowCover stays
+  if (brBlank(BR.url) && BR.hint) {   // rewrite only when it changed (or something else replaced it): keeps its buttons clickable
+    cv.hidden = false;
+    if (cv.dataset.hint !== BR.hint || !cv.querySelector(":scope > [data-bhint]")) { cv.innerHTML = BR.hint; cv.firstElementChild?.setAttribute("data-bhint", ""); cv.dataset.hint = BR.hint; icons(); }
+    return;
+  }
+  if (BR.blob) cv.hidden = true;
+}
 const bsend = m => BR.ws && BR.ws.readyState === 1 && BR.ws.send(JSON.stringify(m));
 function paneBrowser(p, c) {
   p.innerHTML = `${head(c)}
@@ -1192,8 +1205,8 @@ function brTake() { const tk = $('[data-bb="take"]'); if (tk) tk.hidden = !(BR.m
 function mountBrowser(c) {
   const img = $("#bimg"); brInput(img);
   if (BR.id === c.id && BR.ws && BR.ws.readyState <= 1) {   // pane rebuilt (status changed): keep the stream and any recording
-    if (BR.blob) { img.src = BR.blob; $("#bcover").hidden = true; }
-    brTake(); brPorts(); brMarks(); return BR.recording ? brSide() : brInfo();
+    if (BR.blob) img.src = BR.blob;
+    brCover(); brTake(); brPorts(); brMarks(); return BR.recording ? brSide() : brInfo();
   }
   disconnectBrowser(); BR.id = c.id; BR.steps = []; BR.url = "";
   const sock = new WebSocket(`ws://${location.host}/ws/browser/${c.id}?t=${TOKEN}`); sock.binaryType = "blob"; BR.ws = sock;
@@ -1204,17 +1217,19 @@ function mountBrowser(c) {
 function brFrame(blob) {
   const img = $("#bimg"); if (!img) return;
   const u = URL.createObjectURL(blob); img.src = u; if (BR.blob) URL.revokeObjectURL(BR.blob); BR.blob = u;
-  const cv = $("#bcover"); if (cv && !cv.hidden) cv.hidden = true;
+  brCover();
 }
 function brEvent(m) {
   if (m.type === "hello") {
     BR.mcp = m.mcp; BR.ports = m.ports || []; brPorts(); brTake();
     if (m.recording) { BR.recording = true; BR.steps = m.recording; brMarks(); brSide(); }
-    if ((!BR.url || BR.url === "about:blank") && BR.ports.length) { BR.autoLogin = m.login; bsend({ type: "nav", url: `localhost:${BR.ports[0]}` }); }
-    else if (!BR.ports.length && (!BR.url || BR.url === "about:blank")) { const cv = $("#bcover"); if (cv) cv.innerHTML = `<div>No dev server running in this agent's folder<button class="btn secondary" data-bb="askserve">Ask the agent to start one</button><span class="hint">or type a URL above</span></div>`; icons(); }
-    return;
+    BR.hint = m.web === false
+      ? `<div>Nothing open yet<span class="hint">The pages this agent opens show up here. Or type a URL above.</span></div>`
+      : `<div>No dev server running in this agent's folder<button class="btn secondary" data-bb="askserve">Ask the agent to start one</button><span class="hint">or type a URL above</span></div>`;
+    if (brBlank(BR.url) && BR.ports.length) { BR.hint = ""; BR.autoLogin = m.login; bsend({ type: "nav", url: `localhost:${BR.ports[0]}` }); }
+    brCover(); return;
   }
-  if (m.type === "url") { BR.url = m.url; const u = $("#burl"); if (u && document.activeElement !== u) u.value = m.url === "about:blank" ? "" : m.url;
+  if (m.type === "url") { BR.url = m.url; brCover(); const u = $("#burl"); if (u && document.activeElement !== u) u.value = m.url === "about:blank" ? "" : m.url;
     if (BR.autoLogin && /^https?:/.test(m.url)) { BR.autoLogin = false; setTimeout(() => bsend({ type: "login-use" }), 300); } return; }
   if (m.type === "err") { BR.errs.push(m.text); if (BR.errs.length > 50) BR.errs.shift(); const b = $("#berr"); if (b) { b.hidden = false; b.textContent = `● ${BR.errs.length} error${BR.errs.length > 1 ? "s" : ""}`; } return; }
   if (m.type === "steps") {   // from you or the agent: whoever recorded, the card shows it live
@@ -1364,7 +1379,7 @@ function paneSites(p) {
 function mountSites(acc, fresh) {
   const img = $("#bimg"); if (!img) return; brInput(img);
   const id = "sites:" + acc;
-  if (!fresh && BR.id === id && BR.ws && BR.ws.readyState <= 1) { if (BR.blob) { img.src = BR.blob; $("#bcover").hidden = true; } return sitesRender(); }
+  if (!fresh && BR.id === id && BR.ws && BR.ws.readyState <= 1) { if (BR.blob) img.src = BR.blob; brCover(); return sitesRender(); }
   disconnectBrowser(); BR.id = id; BR.url = ""; SW.acc = acc;
   if (!acc) { $("#bcover").innerHTML = `<div>Set up an account first</div>`; return; }
   const sock = new WebSocket(`ws://${location.host}/ws/sites/${encodeURIComponent(acc)}?t=${TOKEN}`); sock.binaryType = "blob"; BR.ws = sock;
@@ -1377,12 +1392,13 @@ const windowCover = () => `<div><i data-lucide="app-window" class="ic"></i>Open 
 function sitesEvent(m) {
   if (m.type === "hello" || m.type === "sites") {
     SW.data = m; sitesRender();
-    if (m.type === "hello" && !m.browser?.window && (!BR.url || BR.url === "about:blank") && m.sites?.length) bsend({ type: "site", id: m.sites[0].id });
-    else if (m.type === "hello" && !m.sites?.length) { SW.adding = true; sitesRender(); const cv = $("#bcover"); if (cv && !BR.blob) cv.innerHTML = `<div>Add the sites your agents use: a spreadsheet, a helpdesk, a dashboard.<p class="hint">Sign in to each one here once. Every agent you start on this account opens them already signed in.</p></div>`; }
-    return;
+    BR.hint = m.sites?.length ? "" : `<div>Add the sites your agents use: a spreadsheet, a helpdesk, a dashboard.<p class="hint">Sign in to each one here once. Every agent you start on this account opens them already signed in.</p></div>`;
+    if (m.type === "hello" && !m.browser?.window && brBlank(BR.url) && m.sites?.length) bsend({ type: "site", id: m.sites[0].id });
+    else if (m.type === "hello" && !m.sites?.length) { SW.adding = true; sitesRender(); }
+    brCover(); return;
   }
   if (m.type === "window") { SW.data = { ...(SW.data || {}), browser: { running: true, window: true } }; const cv = $("#bcover"); if (cv) { cv.hidden = false; cv.innerHTML = windowCover(); icons(); } return sitesRender(); }
-  if (m.type === "url") { const was = BR.url; BR.url = m.url; const u = $("#burl"); if (u && document.activeElement !== u) u.value = m.url === "about:blank" ? "" : m.url; if (hostOf(was) !== hostOf(m.url)) sitesTabs(); return; }
+  if (m.type === "url") { const was = BR.url; BR.url = m.url; brCover(); const u = $("#burl"); if (u && document.activeElement !== u) u.value = m.url === "about:blank" ? "" : m.url; if (hostOf(was) !== hostOf(m.url)) sitesTabs(); return; }
   if (m.type === "toast") return toast(m.text, m.err);
 }
 function sitesTabs() {
@@ -1409,7 +1425,8 @@ function sitesRender() {
 }
 function sitesAgents() {
   const el = $("#sagents"); if (!el) return;
-  const list = S.cards.filter(c => c.kind === "agent" && c.browser && (c.browser.live || c.browser.account || c.browser.mcp) && c.col !== "done")
+  // An agent that finished its turn is "done" but its browser stays up until it's archived: keep it listed while on a page.
+  const list = S.cards.filter(c => c.kind === "agent" && c.browser && (c.browser.live || ((c.browser.account || c.browser.mcp) && c.col !== "done")))
     .sort((x, y) => (!!y.browser.live - !!x.browser.live) || x.name.localeCompare(y.name));
   const h = list.length ? list.map(c => { const s = statusOf(c), sa = c.browser.account && accById(c.browser.account);
     return `<button class="sagent" data-agentbr="${esc(c.id)}"><span class="sd ${s === "running" ? "acc live" : s}" style="width:8px;height:8px;border-radius:50%;flex:none;--ac:${accOf(c).hex}"></span><span class="grow">${esc(c.name)}</span>${sa ? `<span class="st-muted">${esc(sa.label)}'s sites</span>` : ""}<span class="u">${c.browser.live ? esc(c.browser.url.replace(/^https?:\/\//, "")) : "blank"}</span></button>`; }).join("")

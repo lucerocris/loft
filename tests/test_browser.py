@@ -39,6 +39,22 @@ class Parse(unittest.TestCase):
         self.assertEqual(BR._rehost(c, "localhost", "127.0.0.1")[1]["domain"], ".example.com")
         self.assertEqual(BR._rehost(c, "app.dev", "127.0.0.1"), c)
 
+    def test_best_page_skips_blank_tabs(self):
+        tabs = [{"type": "page", "id": "b", "url": "about:blank"}, {"type": "background_page", "id": "x", "url": "chrome-extension://e/bg.html"},
+                {"type": "page", "id": "a", "url": "https://app.example/"}, {"type": "page", "id": "c", "url": "http://localhost:3000/"}]
+        self.assertEqual(BR.best_page(tabs)["id"], "a")   # most recent real page, not the newer blank tab
+        self.assertEqual(BR.best_page(tabs[:2])["id"], "b")   # only blank: still a page to show
+        self.assertIsNone(BR.best_page(tabs[1:2]))
+
+    def test_page_url_survives_a_slow_answer(self):
+        BR._URLS.pop(1, None)
+        with mock.patch.object(BR, "_get", return_value=[{"type": "page", "url": "about:blank"}, {"type": "page", "url": "http://a/"}]):
+            self.assertEqual(BR.page_url(1, ttl=0), "http://a/")
+        with mock.patch.object(BR, "_get", side_effect=TimeoutError()):
+            self.assertEqual(BR.page_url(1, ttl=0), "http://a/")   # busy: keep the link
+        with mock.patch.object(BR, "_get", side_effect=ConnectionRefusedError()):
+            self.assertEqual(BR.page_url(1, ttl=0), "")             # gone
+
 
 @unittest.skipUnless(BR.chrome_bin(), "needs Chrome/Chromium")
 class Live(unittest.TestCase):
@@ -86,6 +102,27 @@ class Live(unittest.TestCase):
         """Normalized screen position of an element, like the card sends."""
         r = BR.page_eval(v.cdp, v.session, f"__loft.find({css!r}, '', false)")
         return {"x": r["x"] / v.meta["deviceWidth"], "y": r["y"] / v.meta["deviceHeight"]}
+
+    def test_viewer_shows_the_page_not_a_stray_blank_tab(self):
+        port = BR.ensure("j3")["port"]
+        self.addCleanup(BR.stop, "j3")
+        c = BR.CDP(BR._get(port, "/json/version")["webSocketDebuggerUrl"]); self.addCleanup(c.close)
+        page = BR.best_page(BR._get(port, "/json/list"))["id"]
+        s = c.call("Target.attachToTarget", {"targetId": page, "flatten": True})["sessionId"]
+        c.call("Page.navigate", {"url": self.base + "/me.html"}, session=s)
+        self.assertTrue(self.wait(lambda: "me.html" in BR.page_url(port, ttl=0)))
+        c.call("Target.createTarget", {"url": "about:blank"})   # newer, blank: the white screen it used to show
+        time.sleep(0.3)
+        v = BR.Viewer(port, lambda b: None, lambda e: None); self.addCleanup(v.close)
+        self.assertEqual(v.target, page)
+        new = c.call("Target.createTarget", {"url": "about:blank"})["targetId"]
+        time.sleep(0.5)
+        self.assertEqual(v.target, page, "a new blank tab doesn't take the view")
+        s2 = c.call("Target.attachToTarget", {"targetId": new, "flatten": True})["sessionId"]
+        c.call("Page.navigate", {"url": self.base + "/login.html"}, session=s2)
+        self.assertTrue(self.wait(lambda: v.target == new), "follows the tab the agent loads a page in")
+        c.call("Target.closeTarget", {"targetId": new})
+        self.assertTrue(self.wait(lambda: v.target == page), "back to the page when that tab closes")
 
     def test_record_needs_a_page(self):
         v, _, _ = self.viewer("j2")
