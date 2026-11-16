@@ -169,6 +169,10 @@ fn enable_media(w: &WebviewWindow) {
 }
 
 fn main() {
+    // Wayland app_id = GTK program name. It must match the launcher (Loft.desktop) or KDE/GNOME
+    // show a generic icon in the title bar and task switcher.
+    #[cfg(target_os = "linux")]
+    glib::set_prgname(Some("Loft"));
     let app = tauri::Builder::default()
         // must be first: a second launch just focuses the running window
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| show_main(app)))
@@ -196,6 +200,8 @@ fn main() {
             let load_handle = handle.clone();
             let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
                 .title("Loft")
+                // `--hidden` (the login autostart entry): start in the tray, the window opens from it
+                .visible(!std::env::args().any(|a| a == "--hidden"))
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(720.0, 480.0)
                 .background_color(tauri::window::Color(15, 16, 18, 255))
@@ -242,7 +248,10 @@ fn main() {
 
             match build_tray(&handle) {
                 Ok(t) => *app.state::<UiState>().tray.lock().unwrap() = Some(t),
-                Err(e) => eprintln!("loft: no tray icon ({e}); closing the window quits"),
+                Err(e) => {
+                    eprintln!("loft: no tray icon ({e}); closing the window quits");
+                    let _ = window.show();   // nothing to open a hidden window from
+                }
             }
 
             // find or start the server off the main thread, then point the window at it

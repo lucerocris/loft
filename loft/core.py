@@ -29,6 +29,39 @@ def auto_pins_file():
     return jobs_dir() / ".cagents-autopins.json"
 
 
+# ------------------------------------------------------------------ Loft's own per-agent notes
+# <job>/loft-meta.json: the title and summary Loft wrote for an agent ({"title", "summary",
+# "titleSource": "auto"|"user", "assistant": bool}). A sidecar, not state.json: a live
+# worker rewrites state.json, and the file moves with the job dir when it is archived.
+
+META = "loft-meta.json"
+
+
+def meta_read(jid):
+    try:
+        m = json.loads((jobs_dir() / jid / META).read_text())
+        return m if isinstance(m, dict) else {}
+    except Exception:
+        return {}
+
+
+def meta_write(jid, **fields):
+    """Merge fields into an agent's loft-meta.json (None removes a field). Returns the result."""
+    d = jobs_dir() / jid
+    if not d.is_dir():
+        raise FileNotFoundError(f"no agent {jid}")
+    m = meta_read(jid)
+    for k, v in fields.items():
+        if v is None:
+            m.pop(k, None)
+        else:
+            m[k] = v
+    tmp = d / (META + ".tmp")
+    tmp.write_text(json.dumps(m, indent=2))
+    tmp.replace(d / META)
+    return m
+
+
 # ------------------------------------------------------------------ processes
 
 def pid_alive(pid):
@@ -264,7 +297,8 @@ BOLD, DIM, RED, YEL, GRN, CYN = "1", "2", "31", "33", "32", "36"
 ANSI = {"blue": "34", "cyan": "36", "orange": "38;5;208", "green": "32", "yellow": "33", "purple": "35", "pink": "95", "red": "31"}
 
 
-def load():
+def load(assistant=False):
+    """Every agent as a flat dict. The Loft Assistant's own session is left out unless asked for."""
     cfg = A.load()
     jobs = []
     for f in glob.glob(str(jobs_dir() / "*" / "state.json")):
@@ -273,10 +307,14 @@ def load():
         except Exception:
             continue
         jid = Path(f).parent.name
+        meta = meta_read(jid)
+        if meta.get("assistant") and not assistant:
+            continue
         acc, _ = job_account(st, cfg)
         jobs.append({
             "id": jid,
-            "name": st.get("name") or (st.get("intent") or "")[:40] or jid,
+            "name": meta.get("title") or st.get("name") or (st.get("intent") or "")[:40] or jid,
+            "summary": meta.get("summary") or None,
             "account": acc["label"] if acc else "other login",
             "accountId": acc["id"] if acc else None,
             "bucket": bucket(st),
