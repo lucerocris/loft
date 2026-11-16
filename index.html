@@ -138,6 +138,20 @@ kbd { font: 11px var(--mono); color: var(--t3); }
 .bigbox { width: min(100%, 680px); position: relative; }
 .bigbox textarea { width: 100%; min-height: 200px; resize: vertical; border: 1px solid var(--t3); background: var(--surface); border-radius: var(--r-lg); padding: 16px 52px 16px 18px; font-size: 16px; line-height: 1.55; outline: none; }
 .bigbox .mic { position: absolute; top: 12px; right: 12px; }
+.bigbox .clip { position: absolute; top: 12px; right: 12px; } .bigbox .mic + .clip { top: 48px; }
+.bigbox.dropping textarea { border-color: var(--t1); border-style: dashed; background: var(--raised); }
+/* files attached to a new task (pasted, dropped, picked) */
+.nfiles { width: min(100%, 680px); display: flex; flex-wrap: wrap; gap: 8px; }
+.nfiles:empty { display: none; }
+.nfile { display: inline-flex; align-items: center; gap: 8px; max-width: 280px; height: 44px; padding: 0 4px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); color: var(--t2); font-size: 12px; }
+.nfile .th { width: 34px; height: 34px; border-radius: var(--r-sm); background: var(--raised) center / cover no-repeat; display: grid; place-items: center; flex: none; color: var(--t3); }
+.nfile .th .ic { width: 16px; height: 16px; }
+.nfile .tx { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.nfile .tx b { font-weight: 500; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nfile .tx span { color: var(--t3); font-size: 11px; }
+.nfile.bad { border-color: var(--failed); } .nfile.bad .tx span { color: var(--failed); }
+.nfile .ibtn { width: 26px; height: 26px; flex: none; }
+.nfile.ro { padding-right: 10px; }
 .opts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-md); }
 .seg button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--t3); padding: 6px 12px; border-radius: var(--r-sm); cursor: pointer; font-weight: 500; }
@@ -998,6 +1012,7 @@ function paneTerm(p, c) {
 function paneTodo(p, c) {
   p.innerHTML = `${head(c, false)}<div class="body"><div class="col">
     <div class="bigbox"><textarea id="tprompt" placeholder="What should the agent do?">${esc(noPrompt(c) ? "" : c.detail)}</textarea>${micBtn("tprompt")}</div>
+    ${(c.files || []).length ? `<div class="nfiles">${c.files.map(f => `<div class="nfile ro" title="${esc(f)}"><span class="th"><i data-lucide="${/\.(png|jpe?g|gif|webp|bmp|heic|svg)$/i.test(f) ? "image" : "file"}" class="ic"></i></span><span class="tx"><b>${esc(f.split("/").pop())}</b><span>attached</span></span></div>`).join("")}</div>` : ""}
     <div class="row"><button class="btn primary" data-start><i data-lucide="play" class="ic"></i>Start on ${esc(accOf(c).label)}</button><span class="hint" style="margin:0">Ctrl+Enter starts · in ${esc(c.cwd)}</span></div>
     <div class="voice-note" id="vnote" hidden></div></div></div>`;
   icons();
@@ -1022,16 +1037,18 @@ function paneNew(p) {
   const accSeg = multiAcc() ? `<span class="label">Account</span><div class="seg" role="group" aria-label="Account">${autoOk ? `<button data-newacct="auto" aria-pressed="${newAcct === "auto"}" title="The allowed account with the lowest 5-hour usage">Auto${best ? ` · ${esc(best.label)} has most left` : ""}</button>` : ""}${allowed.map(a => `<button data-newacct="${esc(a.id)}" aria-pressed="${newAcct === a.id}" title="${esc(accTitle(a))}">${dotH(a)}${esc(a.label)}</button>`).join("")}</div>` : "";
   const hint = pj && multiAcc() ? (allowed.length > 1 && pj.accounts.length ? `${esc(pj.name)} runs on ${allowed.map(a => esc(a.label)).join(" and ")}. Auto uses the one with the most 5-hour usage left.` : pj.accounts.length ? `${esc(pj.name)} runs on ${esc(allowed[0]?.label || "")}.` : "") : "";
   p.innerHTML = `<div class="new"><div class="row"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button><h1>New task</h1></div>
-    <div class="bigbox"><textarea id="nprompt" placeholder="What should an agent do?${S.voice ? " Type, or press V and say it." : ""}">${esc(drafts.new || "")}</textarea>${micBtn("nprompt")}</div>
+    <div class="bigbox"><textarea id="nprompt" placeholder="What should an agent do?${S.voice ? " Type, or press V and say it." : ""}">${esc(drafts.new || "")}</textarea>${micBtn("nprompt")}<button class="mic clip" data-nattach title="Attach files (or paste / drop them)" aria-label="Attach files"><i data-lucide="paperclip" class="ic"></i></button><input type="file" id="nfilein" multiple hidden></div>
+    <div class="nfiles" id="nfiles"></div>
     <div class="fields">${projs.length ? `<span class="label">Project</span><label class="folder pick" title="Project">${pj ? `<span class="dot" style="background:${pj.hex}"></span>` : `<span class="ring"></span>`}<select id="nproj" aria-label="Project"><option value="">No project</option>${projs.map(x => `<option value="${esc(x.id)}"${x.id === newProj ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select><i data-lucide="chevron-down" class="chev"></i></label>` : ""}
       ${accSeg}
       <span class="label">Folder</span><label class="folder" title="Project folder"><i data-lucide="folder" class="ic"></i><input id="ndir" list="dirs" value="${esc(dir)}" spellcheck="false" aria-label="Folder"><datalist id="dirs">${dirs.map(d => `<option value="${esc(d)}">`).join("")}</datalist><button class="ibtn fbr" data-fsbrowse="ndir" title="Browse folders (Ctrl+O)" aria-label="Browse folders"><i data-lucide="folder-search" class="ic"></i></button></label>
       ${pdirs.length > 1 ? `<div class="dchips" role="group" aria-label="${esc(pj.name)} folders">${pdirs.map(d => `<button data-ndir="${esc(d)}" aria-pressed="${d === dir}" title="${esc(d)}">${esc(d)}</button>`).join("")}</div>` : ""}
       ${hint ? `<span class="fhint">${hint}</span>` : ""}<div id="nextras"></div></div>
-    <div class="row"><button class="btn primary" id="nStart"><i data-lucide="play" class="ic"></i>Start</button><button class="btn quiet" id="nTodo">Save to Todo</button><span class="hint" style="margin:0">Ctrl+Enter starts · the title is written for you${S.voice ? ` · say "…start it" at the end to start hands-free` : ""}</span></div>
+    <div class="row"><button class="btn primary" id="nStart"><i data-lucide="play" class="ic"></i>Start</button><button class="btn quiet" id="nTodo">Save to Todo</button><span class="hint" style="margin:0">Ctrl+Enter starts · paste or drop images and files · the title is written for you${S.voice ? ` · say "…start it" at the end to start hands-free` : ""}</span></div>
     <div class="err" id="nerr"></div><div class="voice-note" id="vnote" hidden></div></div>`;
   icons(); setTimeout(() => $("#nprompt")?.focus(), 0);
   newExtrasPaint(); if (!VT.data) vaultLoad().then(newExtrasPaint);
+  nfPaint(); $("#nfilein").addEventListener("change", e => { nfAdd([...e.target.files]); e.target.value = ""; });
 }
 function paneQuiet(p) {
   const v = visible(), run = v.filter(c => c.col === "running").length, todo = v.filter(c => c.col === "todo").length;
@@ -1719,6 +1736,53 @@ function newExtrasBody() {
   if (NL.phone !== null) out.phone = NL.phone;
   return out;
 }
+/* New task: attached files. Each one uploads as soon as it's added (POST /api/uploads, loft/attachments.py);
+   the task keeps the saved paths and the agent reads them. */
+let NF = [];
+const nfSize = n => n < 1024 ? n + " B" : n < 1048576 ? Math.round(n / 1024) + " KB" : (n / 1048576).toFixed(1) + " MB";
+function nfName(f) {
+  if (f.name && f.name !== "image.png") return f.name;
+  const ext = (f.type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/\W.*/, "");
+  const d = new Date(), z = n => String(n).padStart(2, "0");
+  return `${f.type.startsWith("image/") ? "pasted" : "file"}-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}-${NF.length + 1}.${ext}`;
+}
+function nfPaint() {
+  const el = $("#nfiles"); if (!el) return;
+  el.innerHTML = NF.map((f, i) => `<div class="nfile ${f.err ? "bad" : ""}" title="${esc(f.err || f.path || "Uploading…")}">
+    <span class="th" ${f.url ? `style="background-image:url('${f.url}')"` : ""}>${f.url ? "" : `<i data-lucide="file" class="ic"></i>`}</span>
+    <span class="tx"><b>${esc(f.name)}</b><span>${f.err ? esc(f.err) : f.path ? nfSize(f.size) : "Uploading…"}</span></span>
+    <button class="ibtn" data-nfrm="${i}" title="Remove" aria-label="Remove ${esc(f.name)}"><i data-lucide="x" class="ic"></i></button></div>`).join("");
+  icons();
+}
+function nfAdd(files) {
+  files = files.filter(Boolean); if (!files.length) return;
+  if (NF.length + files.length > 20) { toast("Up to 20 files per task.", true); files = files.slice(0, Math.max(0, 20 - NF.length)); }
+  for (const file of files) {
+    const f = { name: nfName(file), size: file.size, url: (file.type || "").startsWith("image/") ? URL.createObjectURL(file) : "", path: "", err: "" };
+    NF.push(f);
+    f.p = api(`/api/uploads?name=${encodeURIComponent(f.name)}`, file, file.type || "application/octet-stream")
+      .then(r => { f.path = r.path; f.size = r.size; }).catch(e => { f.err = e.message || "Upload failed"; }).finally(nfPaint);
+  }
+  nfPaint();
+}
+function nfClear() { NF.forEach(f => f.url && URL.revokeObjectURL(f.url)); NF = []; nfPaint(); }
+async function nfReady() {   // paths of the uploaded files, once every upload has finished
+  await Promise.all(NF.map(f => f.p));
+  if (NF.some(f => f.err)) throw new Error("A file didn't upload. Remove it or add it again.");
+  return NF.map(f => f.path);
+}
+const nfClipFiles = dt => [...(dt?.items || [])].filter(i => i.kind === "file").map(i => i.getAsFile()).filter(Boolean);
+document.addEventListener("paste", e => {
+  if (sel !== "new" || !$("#nprompt")) return;
+  const files = nfClipFiles(e.clipboardData); if (!files.length) return;
+  // a copied image often comes with HTML too; let the text paste through only when there is real text
+  if (!e.clipboardData.getData("text/plain")) e.preventDefault();
+  nfAdd(files);
+});
+const nfDragFiles = e => sel === "new" && !dragId && [...(e.dataTransfer?.types || [])].includes("Files");
+document.addEventListener("dragover", e => { if (!nfDragFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; $(".bigbox")?.classList.add("dropping"); });
+document.addEventListener("dragleave", e => { if (sel === "new" && !e.relatedTarget) $(".bigbox")?.classList.remove("dropping"); });
+document.addEventListener("drop", e => { if (!nfDragFiles(e)) return; e.preventDefault(); $(".bigbox")?.classList.remove("dropping"); nfAdd([...e.dataTransfer.files]); });
 function newExtrasClick(t) {
   if (t.dataset.nlogin) { NL.bank = t.dataset.nlogin === "on"; return newExtrasPaint(); }
   if (t.dataset.nphone) { NL.phone = { auto: null, on: true, off: false }[t.dataset.nphone]; return newExtrasPaint(); }
@@ -1777,8 +1841,10 @@ async function submitNew(start) {
   if (!cwd) { $("#nerr").textContent = "Pick the project folder it works in."; $("#ndir").focus(); return; }
   const b = $(start ? "#nStart" : "#nTodo"); b.disabled = true;
   try {
-    const r = await api("/api/cards", { prompt, cwd, account: newAcct, start, title: "", ...(newProj ? { project: newProj } : {}), ...newExtrasBody() });
-    NL = { bank: true, phone: null };
+    if (NF.some(f => !f.path && !f.err)) $("#nerr").textContent = "Waiting for files to upload…";
+    const files = await nfReady(); $("#nerr").textContent = "";
+    const r = await api("/api/cards", { prompt, cwd, account: newAcct, start, title: "", ...(newProj ? { project: newProj } : {}), ...newExtrasBody(), ...(files.length ? { files } : {}) });
+    NL = { bank: true, phone: null }; nfClear();
     if (!newProj && newAcct !== "auto") store.set("loft.dir." + newAcct, cwd); drafts.new = ""; drafts.dir = undefined; toast(r.message);
     const m = /started ([0-9a-f]{8})/.exec(r.message || ""); if (m) return waitOpen(m[1]);
     setSel(null);
@@ -2349,6 +2415,8 @@ document.addEventListener("click", async e => {
   if (t.dataset.dpick || t.dataset.dboot || t.dataset.dstop || t.dataset.dfree || t.dataset.dv) return devClick(t);
   if (t.dataset.vtab || t.dataset.vreveal || t.dataset.vcopy || t.dataset.vedit || t.dataset.vdel || t.hasAttribute("data-vadd") || t.hasAttribute("data-vcancel") || t.hasAttribute("data-vsave") || t.dataset.bsignin !== undefined || t.dataset.bwin || t.hasAttribute("data-bclosewin")) return vaultClick(t);
   if (t.dataset.nlogin || t.dataset.nphone) return newExtrasClick(t);
+  if (t.hasAttribute("data-nattach")) return $("#nfilein")?.click();
+  if (t.dataset.nfrm) { const [f] = NF.splice(+t.dataset.nfrm, 1); if (f?.url) URL.revokeObjectURL(f.url); return nfPaint(); }
   if (t.dataset.sw || t.dataset.site || t.dataset.ssave || t.dataset.sdel) return sitesClick(t);
   if (t.dataset.archdone) { e.stopPropagation(); return archiveAll(t); }
   if (t.hasAttribute("data-assist")) return setSel(sel === "assistant" ? null : "assistant");

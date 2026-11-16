@@ -29,7 +29,7 @@ import base64, re, fcntl, ipaddress, pty, select, signal, socket, struct, termio
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 def _arg(name, default=None):
@@ -53,7 +53,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, agenttools as AT, assistant as AS, board as B, browser as BR, core as C, mobile as M, paths, projects as P, prompts as PR, sites as ST, titles as TI, transcript as TR, usage as U, vault as V, webapi  # noqa: E402
+from loft import accounts as A, agenttools as AT, attachments as ATT, assistant as AS, board as B, browser as BR, core as C, mobile as M, paths, projects as P, prompts as PR, sites as ST, titles as TI, transcript as TR, usage as U, vault as V, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -825,7 +825,8 @@ def act(cid, action, body):
         code, msg, jid, todo = B.create_task(body.get("prompt"), body.get("cwd"), body.get("account") or None,
                                              body.get("project") or None, body.get("title") or "", bool(body.get("start")),
                                              bank=False if body.get("bank") is False else None,
-                                             phone=body.get("phone") if isinstance(body.get("phone"), bool) else None)
+                                             phone=body.get("phone") if isinstance(body.get("phone"), bool) else None,
+                                             files=body.get("files") if isinstance(body.get("files"), list) else None)
         if code == 200 and jid:
             TI.after_launch(jid, todo, log=log)          # title + summary arrive in a few seconds
         elif code == 200 and todo:
@@ -2013,6 +2014,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"text": Voice.transcribe(audio, ext), "ms": int((time.time() - t0) * 1000)})
             except Exception as e:
                 return self._send(500, {"message": str(e)})
+        if parts == ["api", "uploads"]:   # a file for a new task (loft/attachments.py)
+            n = int(self.headers.get("Content-Length") or 0)
+            if not n or n > ATT.MAX_BYTES:
+                self.rfile.read(n) if 0 < n <= 200_000_000 else None
+                return self._send(400, {"message": f"Files up to {ATT.MAX_BYTES // 1_000_000} MB." if n else "That file is empty."})
+            name = (parse_qs(urlparse(self.path).query).get("name") or ["file"])[0]
+            try:
+                return self._send(200, ATT.save(name, self.rfile.read(n)))
+            except Exception as e:
+                return self._send(400, {"message": str(e)})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         except Exception:

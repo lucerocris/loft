@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import accounts as A
+from . import attachments as AT
 from . import browser as BR
 from . import core as C
 from . import paths
@@ -145,7 +146,7 @@ def load_cards(show_all_done):
             "col": "todo", "state": "todo", "detail": t.get("prompt") or "(no prompt yet)", "result": "",
             "cwd": cwd, "folderName": Path(cwd).name, "projectPin": t.get("project"),
             "updated": C.parse_t(t.get("created") or ""), "live": False, "pinned": False, "failed": False, "links": [],
-            "pending": None,
+            "pending": None, "files": [f for f in t.get("files") or [] if os.path.isfile(f)],
             "queue": {"items": [], "until": limit_until(todo_account(t, cfg)["id"], cfg) or ""} if t.get("queued") else None,
         })
     for c in cards:
@@ -738,7 +739,9 @@ def launch_todo(todo):
     cfg = A.load()
     acc = todo_account(todo, cfg)
     br, extra = agent_extras(todo, cwd, acc)
-    jid, err = spawn_bg(cwd, acc, extra, todo["prompt"], todo.get("title") or "agent")
+    files = todo.get("files") or []
+    extra = extra + AT.add_dir_args(files)          # --add-dir: --name follows it in spawn_bg
+    jid, err = spawn_bg(cwd, acc, extra, AT.prompt_with(todo["prompt"], files), todo.get("title") or "agent")
     if not jid:
         BR.discard(br)
         return None, err
@@ -754,7 +757,7 @@ def launch_todo(todo):
     return jid, f"started {jid} on {acc['label']}"
 
 
-def create_task(prompt, cwd="", account=None, project=None, title="", start=False, bank=None, phone=None):
+def create_task(prompt, cwd="", account=None, project=None, title="", start=False, bank=None, phone=None, files=None):
     """A new task from the app, the phone or `loft new`: saved to Todo, or started now.
     Returns (status, message, jid or None, todo). A title typed here is kept as is; without
     one the card gets a title from the prompt until the generated one lands (loft/titles.py)."""
@@ -784,6 +787,9 @@ def create_task(prompt, cwd="", account=None, project=None, title="", start=Fals
         todo["bank"] = False
     if phone is not None:
         todo["phone"] = bool(phone)
+    files = AT.clean(files)
+    if files:           # pasted / dropped / picked files, listed under the prompt when it starts
+        todo["files"] = files
     if start:
         if not prompt:
             return 400, "Write a prompt to start it with.", None, todo

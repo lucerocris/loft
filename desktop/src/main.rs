@@ -206,6 +206,8 @@ fn main() {
                 .min_inner_size(720.0, 480.0)
                 .background_color(tauri::window::Color(15, 16, 18, 255))
                 .initialization_script(INIT_JS)
+                // let the page get dropped files (New task attachments) as normal HTML drop events
+                .disable_drag_drop_handler()
                 .on_navigation(move |url| {
                     if is_app(url) || is_loft(url) {
                         return true;
