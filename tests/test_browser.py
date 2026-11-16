@@ -57,6 +57,23 @@ class Parse(unittest.TestCase):
 
 
 @unittest.skipUnless(BR.chrome_bin(), "needs Chrome/Chromium")
+class Drag(unittest.TestCase):
+    """Your mouse in the viewer: a held button rides along on moves, so sliders and drags work."""
+
+    def test_held_button_goes_with_moves(self):
+        v = BR.Viewer.__new__(BR.Viewer)
+        v.meta, v.session, sent = {"deviceWidth": 1000, "deviceHeight": 500}, "s1", []
+        v.cdp = mock.Mock(send=lambda m, p, session=None: sent.append(p))
+        v.mouse({"kind": "mousePressed", "x": 0.1, "y": 0.5, "button": "left", "buttons": 1})
+        v.mouse({"kind": "mouseMoved", "x": 0.5, "y": 0.5, "button": "left", "buttons": 1})
+        v.mouse({"kind": "mouseReleased", "x": 0.5, "y": 0.5, "button": "left", "buttons": 0})
+        v.mouse({"kind": "mouseMoved", "x": 0.6, "y": 0.5, "buttons": 0})
+        self.assertEqual([(p["type"], p.get("button"), p.get("buttons")) for p in sent],
+                         [("mousePressed", "left", 1), ("mouseMoved", "left", 1), ("mouseReleased", "left", 0),
+                          ("mouseMoved", None, 0)])
+        self.assertEqual((sent[1]["x"], sent[1]["y"]), (500, 250))
+
+
 class Live(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

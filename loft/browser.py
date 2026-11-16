@@ -565,6 +565,9 @@ def screenshot(cdp, session, dest, clip=None):
 
 
 # ------------------------------------------------------------------ live viewer
+BUTTONS = ("left", "middle", "right")
+
+
 class Viewer:
     """Streams one tab of the agent's browser as JPEG frames and drives it with your input.
 
@@ -715,6 +718,10 @@ class Viewer:
             p.update(deltaX=ev.get("dx", 0), deltaY=ev.get("dy", 0))
         if kind in ("mousePressed", "mouseReleased"):
             p.update(button=ev.get("button", "left"), clickCount=ev.get("clicks", 1))
+        if ev.get("button") in BUTTONS and kind == "mouseMoved":   # a drag: the button is held while it moves
+            p["button"] = ev["button"]
+        if isinstance(ev.get("buttons"), int):   # what's held (1 left, 2 right, 4 middle): sliders and drag-and-drop need it
+            p["buttons"] = ev["buttons"] & 7
         self.cdp.send("Input.dispatchMouseEvent", p, session=self.session)
 
     def key(self, ev):
