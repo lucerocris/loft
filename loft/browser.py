@@ -362,16 +362,32 @@ def mcp_config(rec):
 _URLS = {}
 
 
+def is_blank(url):
+    """A tab with nothing to look at: about:blank, a new tab, chrome:// pages."""
+    return not (url or "").startswith(("http:", "https:", "file:"))
+
+
+def best_page(pages):
+    """The tab to show: the most recently active one with a real page, else the most recent one.
+    `pages` is in /json/list order (most recently active first). Agents often leave a stray
+    about:blank tab around (a new browser context, a closed popup); never prefer it over a page."""
+    pages = [t for t in pages if t.get("type") == "page"]
+    return next((t for t in pages if not is_blank(t.get("url"))), pages[0] if pages else None)
+
+
 def page_url(port, ttl=3.0):
-    """The newest tab's URL (cheap: the HTTP endpoint, cached a few seconds). "" if none or not running."""
+    """The URL of the tab Loft shows (cheap: the HTTP endpoint, cached a few seconds). "" if none or not running."""
     now = time.time()
     hit = _URLS.get(port)
     if hit and now - hit[0] < ttl:
         return hit[1]
     try:
-        pages = [t for t in _get(port, "/json/list", timeout=0.5) if t.get("type") == "page"]
-        url = pages[0].get("url", "") if pages else ""   # /json/list puts the most recently active tab first
-    except Exception:
+        page = best_page(_get(port, "/json/list", timeout=0.5))
+        url = page.get("url", "") if page else ""
+    except Exception as e:
+        refused = isinstance(getattr(e, "reason", e), ConnectionRefusedError)
+        if hit and not refused and now - hit[0] < 30:   # busy, not gone: keep the last answer so the chip doesn't flicker
+            return hit[1]
         url = ""
     _URLS[port] = (now, url)
     return url
@@ -550,10 +566,11 @@ def screenshot(cdp, session, dest, clip=None):
 
 # ------------------------------------------------------------------ live viewer
 class Viewer:
-    """Streams the agent's newest tab as JPEG frames and drives it with your input.
+    """Streams one tab of the agent's browser as JPEG frames and drives it with your input.
 
     on_frame(bytes) gets each frame; on_event(dict) gets {"type": "url"|"err"|"step"|"toast", ...}.
-    Follows the newest page, so a tab the agent (or a check run) opens shows up by itself.
+    Starts on the tab with a real page (best_page), then follows the agent: a tab it (or a check run)
+    opens or navigates shows up by itself. A new blank tab doesn't steal the view until it loads a page.
     """
 
     def __init__(self, port, on_frame, on_event, scope=None, jid=None):
@@ -561,11 +578,18 @@ class Viewer:
         self.session = self.target = None
         self.meta = {"deviceWidth": 1280, "deviceHeight": 800}
         self.urls, self.mobile = {}, False
+        self.pages = {}                      # targetId -> url, every page tab we know of
+        self._attach_lock = threading.RLock()
         self.cdp = CDP(_get(port, "/json/version")["webSocketDebuggerUrl"])
         self.cdp.handlers.append(self._on)
+        # Know the existing tabs before discovery starts: setDiscoverTargets replays a targetCreated for
+        # each of them, and those must not each grab the view (whichever won the race was shown,
+        # often a stray blank tab: a white screen while the agent's page sat in another tab).
+        for t in self.cdp.call("Target.getTargets")["targetInfos"]:
+            if t["type"] == "page":
+                self.pages[t["targetId"]] = t.get("url", "")
         self.cdp.call("Target.setDiscoverTargets", {"discover": True})
-        pages = [t for t in self.cdp.call("Target.getTargets")["targetInfos"] if t["type"] == "page"]
-        self.attach(pages[-1]["targetId"] if pages else self.cdp.call("Target.createTarget", {"url": "about:blank"})["targetId"])
+        self._fallback()
         if scope:
             try:
                 login_cookies(self.cdp, self.session, scope)   # cookies: no page needed, and harmless if already set
@@ -587,6 +611,10 @@ class Viewer:
         return "Logged in with the saved login"
 
     def attach(self, tid):
+        with self._attach_lock:
+            self._attach(tid)
+
+    def _attach(self, tid):
         if tid == self.target:
             return
         old = self.session
@@ -614,11 +642,23 @@ class Viewer:
 
     def _on(self, msg):
         m, p, s = msg.get("method"), msg.get("params") or {}, msg.get("sessionId")
-        if m == "Target.targetCreated" and p["targetInfo"]["type"] == "page":
-            return self._later(self.attach, p["targetInfo"]["targetId"])
-        if m == "Target.targetDestroyed" and p.get("targetId") == self.target:
-            self.target = None
-            return self._later(self._fallback)
+        if m in ("Target.targetCreated", "Target.targetInfoChanged") and p["targetInfo"]["type"] == "page":
+            info = p["targetInfo"]
+            tid, url = info["targetId"], info.get("url", "")
+            new, was = tid not in self.pages, self.pages.get(tid)
+            self.pages[tid] = url
+            if tid == self.target:
+                return
+            # Follow the agent: a tab that loads a real page, or any new tab while we show nothing.
+            if (not is_blank(url) and (new or url != was)) or (new and self._blank_now()):
+                return self._later(self.attach, tid)
+            return
+        if m == "Target.targetDestroyed":
+            self.pages.pop(p.get("targetId"), None)
+            if p.get("targetId") == self.target:
+                self.target = None
+                return self._later(self._fallback)
+            return
         if s != self.session:
             return
         if m == "Page.screencastFrame":
@@ -641,9 +681,22 @@ class Viewer:
         elif m == "Network.loadingFailed" and not p.get("canceled"):
             return self.on_event({"type": "err", "text": f"{p.get('errorText')} {self.urls.get(p['requestId'], '')[:300]}"})
 
+    def _blank_now(self):
+        return self.target is None or is_blank(self.pages.get(self.target))
+
     def _fallback(self):
-        pages = [t for t in self.cdp.call("Target.getTargets")["targetInfos"] if t["type"] == "page"]
-        self.attach(pages[-1]["targetId"] if pages else self.cdp.call("Target.createTarget", {"url": "about:blank"})["targetId"])
+        """Show the best tab there is (or open one)."""
+        with self._attach_lock:
+            try:
+                order = [t for t in _get(self.port, "/json/list") if t.get("id") in self.pages]
+            except Exception:
+                order = []
+            seen = {t["id"] for t in order}
+            order += [{"id": tid, "url": u} for tid, u in self.pages.items() if tid not in seen]
+            page = best_page([{**t, "type": "page"} for t in order])
+            tid = page["id"] if page else self.cdp.call("Target.createTarget", {"url": "about:blank"})["targetId"]
+            self.pages.setdefault(tid, "about:blank")
+            self._attach(tid)
 
     def close(self):
         self.cdp.close()
