@@ -209,6 +209,21 @@ class PhoneAccess(unittest.TestCase):
         self.assertLessEqual(codes.index(429), 5, codes)          # blocked by the 6th try at the latest
         self.assertEqual(self.phone("GET", "/api/ping", p["token"])[0], 429)   # blocked even with a good token
 
+    def test_09_phone_sends_a_file(self):
+        Guard_reset(self)   # test 08 left this IP blocked
+        p = self.pair("files")
+        for path in ("/api/files", "/api/uploads"):
+            st, j = self.phone("POST", f"{path}?name=shot%201.png", p["token"], body=b"\x89PNG img",
+                               headers={"Content-Type": "application/octet-stream"})
+            self.assertEqual(st, 200, j)
+            f = Path(j["path"])
+            try:
+                self.assertEqual((f.name, f.read_bytes(), f.parent.parent.name), ("shot 1.png", b"\x89PNG img", "attachments"))
+            finally:
+                shutil.rmtree(f.parent, ignore_errors=True)
+        self.assertEqual(self.phone("POST", "/api/files?name=e", p["token"], body=b"")[0], 400)
+        self.assertEqual(self.phone("POST", "/api/files?name=x", headers={"Content-Type": "application/octet-stream"}, body=b"x")[0], 401)
+
 
 def Guard_reset(tc):
     """Test 04 used 4 failures; wait them out of the window isn't practical, so

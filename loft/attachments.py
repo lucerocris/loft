@@ -1,7 +1,9 @@
 """Files attached to a new task: pasted screenshots, dropped or picked files.
 
-The app uploads each file (POST /api/uploads?name=<file name>, raw body) before the task is
-created; it lands in <data>/attachments/<8 hex>/<name> and the task keeps the paths. When the
+The app uploads each file (POST /api/uploads?name=<file name>, raw body; Loft Mobile uses the
+alias /api/files) before the task is created; it lands in <data>/attachments/<8 hex>/<name> and
+the task keeps the paths. The phone writes the paths into the prompt instead of sending `files`;
+create_task picks them up from the text (in_text). When the
 agent starts, the paths are listed under its prompt and the attachments folder is added with
 --add-dir, so it can Read them (images included) without asking.
 """
@@ -55,8 +57,14 @@ def clean(files):
     return out
 
 
+def in_text(text):
+    """Upload paths written into a prompt (Loft Mobile puts the paths it got back into the text)."""
+    base = str(root())
+    return clean(re.findall(re.escape(base + os.sep) + r"[0-9a-f]{8}/[^\n]+?(?=\s*$|\n)", text or "", re.M))
+
+
 def prompt_with(prompt, files):
-    files = [f for f in files or [] if os.path.isfile(f)]
+    files = [f for f in files or [] if os.path.isfile(f) and f not in (prompt or "")]
     if not files:
         return prompt
     lines = "\n".join(f"- {f}" for f in files)

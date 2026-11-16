@@ -2014,8 +2014,11 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, {"text": Voice.transcribe(audio, ext), "ms": int((time.time() - t0) * 1000)})
             except Exception as e:
                 return self._send(500, {"message": str(e)})
-        if parts == ["api", "uploads"]:   # a file for a new task (loft/attachments.py)
-            n = int(self.headers.get("Content-Length") or 0)
+        if parts in (["api", "uploads"], ["api", "files"]):   # a file for a task (loft/attachments.py); /api/files = Loft Mobile
+            try:
+                n = max(0, int(self.headers.get("Content-Length") or 0))   # negative would read to EOF
+            except ValueError:
+                n = 0
             if not n or n > ATT.MAX_BYTES:
                 self.rfile.read(n) if 0 < n <= 200_000_000 else None
                 return self._send(400, {"message": f"Files up to {ATT.MAX_BYTES // 1_000_000} MB." if n else "That file is empty."})

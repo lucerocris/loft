@@ -99,6 +99,16 @@ class Task(Base):
             B.launch_todo(todo)
         self.assertEqual((seen["args"], seen["prompt"]), ([], "plain"))
 
+    def test_phone_paths_in_the_prompt_become_files(self):
+        """Loft Mobile uploads to /api/files and writes the paths it gets back into the prompt."""
+        a, b = AT.save("my shot.png", b"img")["path"], AT.save("notes.pdf", b"pdf")["path"]
+        prompt = f"what's wrong here\n{a}\n{b}\n/etc/passwd\n{AT.root()}/deadbeef/nope.txt"
+        self.assertEqual(AT.in_text(prompt), [a, b])
+        code, _, _, todo = B.create_task(prompt, str(self.proj))
+        self.assertEqual((code, todo["files"]), (200, [a, b]))
+        self.assertEqual(AT.prompt_with(prompt, todo["files"]), prompt)        # already listed: not listed twice
+        self.assertEqual(AT.add_dir_args(todo["files"]), ["--add-dir", str(AT.root())])
+
 
 if __name__ == "__main__":
     unittest.main()

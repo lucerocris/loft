@@ -787,7 +787,7 @@ def create_task(prompt, cwd="", account=None, project=None, title="", start=Fals
         todo["bank"] = False
     if phone is not None:
         todo["phone"] = bool(phone)
-    files = AT.clean(files)
+    files = AT.clean(list(files or []) + AT.in_text(prompt))
     if files:           # pasted / dropped / picked files, listed under the prompt when it starts
         todo["files"] = files
     if start:
