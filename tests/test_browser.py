@@ -73,6 +73,23 @@ class Drag(unittest.TestCase):
                           ("mouseMoved", None, 0)])
         self.assertEqual((sent[1]["x"], sent[1]["y"]), (500, 250))
 
+    def test_intercepted_drag_plays_out_and_ends(self):
+        """A drag the page starts comes to us (headless has none of its own); moves drag, letting go drops."""
+        v = BR.Viewer.__new__(BR.Viewer)
+        v.meta, v.session, v._drag, sent = {"deviceWidth": 1000, "deviceHeight": 500}, "s1", None, []
+        v.cdp = mock.Mock(send=lambda m, p, session=None: sent.append((m, p["type"], dict(p.get("data") or {}))))
+        v._on({"method": "Input.dragIntercepted", "sessionId": "s1", "params": {"data": {"items": [], "dragOperationsMask": 1}}})
+        v.mouse({"kind": "mouseMoved", "x": 0.2, "y": 0.5, "button": "left", "buttons": 1})
+        v.mouse({"kind": "mouseMoved", "x": 0.3, "y": 0.5, "button": "left", "buttons": 1})
+        v.mouse({"kind": "mouseReleased", "x": 0.3, "y": 0.5, "button": "left", "buttons": 0})
+        self.assertEqual([t for _, t, _ in sent], ["dragEnter", "dragOver", "dragOver", "drop", "mouseReleased"])
+        self.assertFalse(any("_entered" in d for _, _, d in sent))
+        self.assertIsNone(v._drag)
+        sent.clear()   # a drag whose release never came is cancelled by the next press, which still goes through
+        v._on({"method": "Input.dragIntercepted", "sessionId": "s1", "params": {"data": {"items": [], "dragOperationsMask": 1}}})
+        v.mouse({"kind": "mousePressed", "x": 0.5, "y": 0.5, "button": "left", "buttons": 1})
+        self.assertEqual([t for _, t, _ in sent], ["dragCancel", "mousePressed"])
+
 
 class Live(unittest.TestCase):
     @classmethod

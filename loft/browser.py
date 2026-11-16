@@ -576,12 +576,15 @@ class Viewer:
     opens or navigates shows up by itself. A new blank tab doesn't steal the view until it loads a page.
     """
 
+    _drag = None
+
     def __init__(self, port, on_frame, on_event, scope=None, jid=None):
         self.port, self.on_frame, self.on_event, self.scope, self.jid = port, on_frame, on_event, scope, jid
         self.session = self.target = None
         self.meta = {"deviceWidth": 1280, "deviceHeight": 800}
         self.urls, self.mobile = {}, False
         self.pages = {}                      # targetId -> url, every page tab we know of
+        self._drag = None                    # an HTML drag-and-drop in progress (Input.dragIntercepted data)
         self._attach_lock = threading.RLock()
         self.cdp = CDP(_get(port, "/json/version")["webSocketDebuggerUrl"])
         self.cdp.handlers.append(self._on)
@@ -627,6 +630,14 @@ class Viewer:
             self.cdp.send("Target.detachFromTarget", {"sessionId": old})
         for m in ("Page.enable", "Runtime.enable", "Network.enable"):
             self.cdp.call(m, session=s)
+        # Headless Chrome has no real drag-and-drop: a native drag the page starts (an image, a link,
+        # a draggable puzzle piece) can hang that tab, ignoring every click and key after it.
+        # Intercepted, the drag comes to us instead and mouse() plays it out as drag events.
+        self._drag = None
+        try:
+            self.cdp.call("Input.setInterceptDrags", {"enabled": True}, session=s)
+        except Exception:
+            pass
         if self.mobile:
             self.viewport(True)
         self.cdp.call("Page.startScreencast", {"format": "jpeg", "quality": 70, "maxWidth": 1600, "maxHeight": 1600},
@@ -663,6 +674,9 @@ class Viewer:
                 return self._later(self._fallback)
             return
         if s != self.session:
+            return
+        if m == "Input.dragIntercepted":
+            self._drag = dict(p.get("data") or {})
             return
         if m == "Page.screencastFrame":
             self.cdp.send("Page.screencastFrameAck", {"sessionId": p["sessionId"]}, session=s)
@@ -722,7 +736,29 @@ class Viewer:
             p["button"] = ev["button"]
         if isinstance(ev.get("buttons"), int):   # what's held (1 left, 2 right, 4 middle): sliders and drag-and-drop need it
             p["buttons"] = ev["buttons"] & 7
+        if self._drag is not None and kind in ("mouseMoved", "mouseReleased"):
+            return self._drag_step(kind, x, y, p["modifiers"])
+        if self._drag is not None and kind == "mousePressed":   # its release got lost: end it, then press
+            data, self._drag = self._drag, None
+            data.pop("_entered", None)
+            self.cdp.send("Input.dispatchDragEvent", {"type": "dragCancel", "x": x, "y": y, "data": data}, session=self.session)
         self.cdp.send("Input.dispatchMouseEvent", p, session=self.session)
+
+    def _drag_step(self, kind, x, y, mods):
+        """An intercepted drag-and-drop: moves drag over the page, letting go drops, then the button is up."""
+        data, entered = self._drag, self._drag.pop("_entered", False)
+        d = {"x": x, "y": y, "modifiers": mods, "data": data}
+        send = lambda t: self.cdp.send("Input.dispatchDragEvent", {"type": t, **d}, session=self.session)
+        if kind == "mouseMoved":
+            if not entered:
+                send("dragEnter")
+            send("dragOver")
+            data["_entered"] = True   # popped before each send above, so Chrome never sees it
+            return
+        self._drag = None
+        send("drop" if entered else "dragCancel")
+        self.cdp.send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left",
+                                                   "buttons": 0, "clickCount": 1, "modifiers": mods}, session=self.session)
 
     def key(self, ev):
         if ev.get("text"):
