@@ -7,7 +7,7 @@ real background agent on the account it was written for.
 Terminal board columns move by themselves as agents change state:
     TODO  ->  WORKING  ->  NEEDS YOU  ->  DONE
 """
-import contextlib, curses, io, json, os, re, shlex, shutil, subprocess, textwrap, time, uuid
+import contextlib, curses, io, json, os, re, shlex, shutil, subprocess, sys, textwrap, time, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -124,8 +124,10 @@ def load_cards(show_all_done):
             continue
         out = st.get("output") if isinstance(st.get("output"), dict) else {}
         acc, _ = C.job_account(st, cfg)
+        meta = C.meta_read(jid)
         cards.append({
-            "kind": "agent", "id": jid, "name": st.get("name") or jid,
+            "kind": "agent", "id": jid, "name": meta.get("title") or st.get("name") or jid,
+            "summary": meta.get("summary") or None, "assistant": bool(meta.get("assistant")),
             **_acc_fields(acc, cfg), "col": b, "state": st.get("state"),
             "detail": detail, "result": (out or {}).get("result") or "",
             "cwd": st.get("worktreePath") or st.get("cwd") or "", "folderName": C.project(st),
@@ -138,7 +140,8 @@ def load_cards(show_all_done):
     for t in load_todos():
         cwd = os.path.expanduser(t.get("cwd") or "~")
         cards.append({
-            "kind": "todo", "id": t["id"], "name": t.get("title") or "untitled", **_acc_fields(todo_account(t, cfg), cfg),
+            "kind": "todo", "id": t["id"], "name": t.get("title") or "untitled", "summary": t.get("summary") or None,
+            "assistant": False, **_acc_fields(todo_account(t, cfg), cfg),
             "col": "todo", "state": "todo", "detail": t.get("prompt") or "(no prompt yet)", "result": "",
             "cwd": cwd, "folderName": Path(cwd).name, "projectPin": t.get("project"),
             "updated": C.parse_t(t.get("created") or ""), "live": False, "pinned": False, "failed": False, "links": [],
@@ -258,18 +261,12 @@ def settle(card):
     return "couldn't stop its idle worker, try again"
 
 
-def act_rename(card, name):
-    if card["kind"] == "todo":
-        todos = load_todos()
-        for t in todos:
-            if t["id"] == card["id"]:
-                t["title"] = name
-        save_todos(todos); return "renamed"
-    err = settle(card)
-    if err:
-        return err
-    write_state(card["id"], lambda st: {**st, "name": name, "nameSource": "user"})
-    return "renamed"
+def act_rename(card, name, summary=None):
+    """Set a title (and/or summary) by hand. Works while the agent runs: Loft keeps the title in
+    its own sidecar (core.meta_*); state.json follows when no worker is alive to overwrite it."""
+    from . import titles as TI
+    TI.save(card, title=name or None, summary=summary, source="user")
+    return "renamed" if name else "saved"
 
 
 # ---------------------------------------------------------------- account switch
@@ -611,6 +608,15 @@ def act_archive(card):
     except Exception:
         pass
     try:
+        rec = BR.record(card["id"]) or {}
+        if rec.get("ticket"):
+            from . import vault as V
+            V.drop_ticket(rec["ticket"])   # its keys hook stops working
+        from . import mobile as M
+        M.release(card["id"])              # its phone is free for the next agent
+    except Exception:
+        pass
+    try:
         BR.stop(card["id"])   # its shared browser and profile go with it
     except Exception:
         pass
@@ -637,30 +643,17 @@ def act_organize():
     return f"organized ({n} changes)"
 
 
-def launch_todo(todo):
-    cwd = os.path.expanduser(todo.get("cwd") or "~")
-    if os.path.realpath(cwd) == os.path.realpath(str(HOME)):
-        return None, "pick a project folder: Claude won't start background agents in your home folder"
-    if not os.path.isdir(cwd):
-        return None, f"folder missing: {cwd}"
-    cfg = A.load()
-    acc = todo_account(todo, cfg)
-    try:   # web project: a browser the agent shares with the card (see loft/browser.py)
-        br = BR.prepare(cwd)
-    except Exception:
-        br = None
-    extra = ["--mcp-config", BR.mcp_config(br), "--append-system-prompt", BR.AGENT_NOTE] if br else []
-    # --mcp-config takes several values: the flags after it end the list before the prompt
-    cmd = [paths.claude_bin(), "--bg", *extra, "--name", todo.get("title") or "agent", todo["prompt"]]
+def spawn_bg(cwd, acc, args, prompt, name):
+    """`claude --bg <args> --name <name> <prompt>` in cwd on an account. (jid, None) or (None, error).
+    Flags that take several values (--mcp-config, --allowedTools...) must be followed by another
+    flag in args: --name ends their list."""
+    cmd = [paths.claude_bin(), "--bg", *args, "--name", name or "agent", prompt]
     r = subprocess.run(cmd, cwd=cwd, env=account_env(acc), capture_output=True, text=True, timeout=90)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]{8})", r.stdout + r.stderr)
     if not m:
-        BR.discard(br)
         lines = (r.stdout + r.stderr).strip().splitlines()
         return None, lines[-1] if lines else "launch failed"
     jid = m.group(1)
-    if br:
-        BR.adopt(jid, br)
     for _ in range(20):
         if (jobs() / jid / "state.json").exists():
             try:
@@ -669,6 +662,90 @@ def launch_todo(todo):
                 pass
             break
         time.sleep(0.1)
+    return jid, None
+
+
+MOBILE_MARKERS = ("pubspec.yaml", "android", "app.json", "build.gradle", "build.gradle.kts", "settings.gradle",
+                  "settings.gradle.kts", "AndroidManifest.xml", "capacitor.config.json", "capacitor.config.ts")
+
+
+def wants_phone(cwd, todo=None):
+    """Give a new agent an Android phone? When the task asks for one, or the folder is a mobile app."""
+    from . import mobile as M
+    if (todo or {}).get("phone") is False or os.environ.get("LOFT_PHONE") == "0" or not M.available():
+        return False
+    if (todo or {}).get("phone"):
+        return True
+    return any((Path(cwd) / m).exists() for m in MOBILE_MARKERS)
+
+
+def agent_extras(todo, cwd, acc):
+    """What Loft adds to an agent's launch: its browser, phone, logins and keys. (record or None, claude args).
+
+    One agent record (loft/browser.py, <cache>/browsers/<jid>.json) carries the token its Loft tools
+    use; the browser itself is only started for web folders, accounts with signed-in sites, and tasks
+    with logins (they sign in in the browser, or on the phone for mobile apps)."""
+    from . import vault as V
+    try:
+        project = todo.get("project") or P.project_of("", cwd, P.load())
+    except Exception:
+        project = todo.get("project")
+    try:
+        logins = V.logins_for(acc["id"], project, todo.get("logins") or None)
+        key_names = V.key_names_for(acc["id"], project)
+    except Exception:
+        logins, key_names = [], []
+    phone = wants_phone(cwd, todo)
+    try:
+        br = BR.prepare(cwd, acc["id"], tools=bool(phone or logins or key_names),
+                        browser=bool(logins and not phone))
+    except Exception:
+        br = None
+    if not br:
+        return None, []
+    br["phone"] = phone
+    br["logins"] = [x["id"] for x in logins]
+    br["project"] = project
+    notes = [BR.agent_note(br)] if br.get("port") else []
+    if phone:
+        notes.append(PHONE_NOTE)
+    if logins or key_names:
+        notes.append(V.agent_note(logins, key_names))
+    extra = ["--mcp-config", BR.mcp_config(br)]
+    if br.get("port"):
+        extra += ["--disallowedTools", BR.DENY_TOOLS]
+    if key_names:
+        br["ticket"] = V.make_ticket(acc["id"], project)
+        extra += ["--settings", V.hook_settings(br["ticket"], [sys.executable, str(paths.REPO / "bin" / "loft")])]
+    if notes:
+        extra += ["--append-system-prompt", " ".join(n for n in notes if n)]
+    return br, extra
+
+
+PHONE_NOTE = ("Loft shares an Android phone with you (an emulator, or a real phone over adb): the loft_phone_* tools "
+              "show its screen with the tappable elements, and tap, swipe, type, press keys, open apps and deep "
+              "links, install APKs and read logs. The user watches it live in Loft › Devices and may take over. "
+              "loft_phone_screen also tells you the device's serial: build and install with the usual tools on it "
+              "(`flutter run -d <serial>`, `npx expo run:android --device <serial>`, `./gradlew installDebug` with "
+              "ANDROID_SERIAL=<serial>, `adb -s <serial> ...`). Don't start or stop emulators yourself; ask Loft "
+              "with loft_phone_use. After a change, look at the screen to check it.")
+
+
+def launch_todo(todo):
+    cwd = os.path.expanduser(todo.get("cwd") or "~")
+    if os.path.realpath(cwd) == os.path.realpath(str(HOME)):
+        return None, "pick a project folder: Claude won't start background agents in your home folder"
+    if not os.path.isdir(cwd):
+        return None, f"folder missing: {cwd}"
+    cfg = A.load()
+    acc = todo_account(todo, cfg)
+    br, extra = agent_extras(todo, cwd, acc)
+    jid, err = spawn_bg(cwd, acc, extra, todo["prompt"], todo.get("title") or "agent")
+    if not jid:
+        BR.discard(br)
+        return None, err
+    if br:
+        BR.adopt(jid, br)
     if todo.get("project"):   # keep the project the task was written for, even outside its folders
         try:
             with P.locked() as pcfg:
@@ -677,6 +754,126 @@ def launch_todo(todo):
         except Exception:
             pass
     return jid, f"started {jid} on {acc['label']}"
+
+
+def create_task(prompt, cwd="", account=None, project=None, title="", start=False, logins=None, phone=None):
+    """A new task from the app, the phone or `loft new`: saved to Todo, or started now.
+    Returns (status, message, jid or None, todo). A title typed here is kept as is; without
+    one the card gets a title from the prompt until the generated one lands (loft/titles.py)."""
+    from . import titles as TI
+    proj = None
+    if project:
+        proj = P.get(project)
+        if not proj:
+            return 400, "That project is gone. Pick another one.", None, None
+    prompt = (prompt or "").strip()
+    cwd = (cwd or "").strip() or (proj["folders"][0] if proj and proj["folders"] else "")
+    typed = (title or "").strip()
+    title = typed or TI.derive_title(prompt)
+    if not title:
+        return 400, "Write what the agent should do.", None, None
+    if not cwd or not os.path.isdir(os.path.expanduser(cwd)):
+        return 400, "Pick a project folder that exists.", None, None
+    if os.path.realpath(os.path.expanduser(cwd)) == os.path.realpath(str(HOME)):
+        return 400, "Pick a project folder: Claude won't start background agents in your home folder.", None, None
+    acc = P.pick_account(account or None, proj, A.load(), U.get)
+    todo = {"id": "t" + uuid.uuid4().hex[:8], "title": title, "titleSource": "user" if typed else "auto",
+            "account": acc["id"], "cwd": cwd.replace(str(HOME), "~"), "prompt": prompt,
+            "created": now_utc().isoformat()}
+    if proj:
+        todo["project"] = proj["id"]
+    if logins:
+        todo["logins"] = [str(x) for x in logins if isinstance(x, str)][:20]
+    if phone is not None:
+        todo["phone"] = bool(phone)
+    if start:
+        if not prompt:
+            return 400, "Write a prompt to start it with.", None, todo
+        jid, msg = launch_todo(todo)
+        return (200, msg, jid, todo) if jid else (500, msg, None, todo)
+    todos = load_todos(); todos.append(todo); save_todos(todos)
+    return 200, "Added to Todo", None, todo
+
+
+# ---------------------------------------------------------------- bulk actions
+# POST /api/bulk, `loft archive --done`, `loft stop --all`. The Loft Assistant's own session
+# is never touched; todos only when named by id (archiving one deletes it).
+
+BULK_FILTERS = ("done", "idle", "all")
+
+
+def bulk_targets(cards, action, filt="done", ids=None):
+    """The cards a bulk action applies to. `filt` is ignored when ids are given."""
+    cards = [c for c in cards if not c.get("assistant")]
+    if ids:
+        want = set(ids)
+        return [c for c in cards if c["id"] in want and (action == "archive" or c["kind"] == "agent")]
+    agents = [c for c in cards if c["kind"] == "agent"]
+    if filt == "done":
+        picked = [c for c in agents if c["col"] == "done"]
+    elif filt == "idle":
+        picked = [c for c in agents if not busy(c)]
+    elif filt == "all":
+        picked = agents
+    else:
+        raise ValueError(f"filter is one of {', '.join(BULK_FILTERS)}")
+    if action == "stop":    # only what has a worker to stop
+        picked = [c for c in picked if c.get("live") or busy(c)]
+    return picked
+
+
+def stop_agent(card, wait=5.0):
+    """`claude stop` an agent and wait for its worker to go. None, or an error string."""
+    r = claude("stop", card["id"], card=card)
+    waited = 0.0
+    while card["id"] in live_shorts() and waited < wait:
+        time.sleep(0.2); waited += 0.2
+    if card["id"] in live_shorts():
+        out = ((r.stdout or "") + (r.stderr or "")).strip().splitlines()
+        return out[-1] if out and r.returncode else "its worker is still running"
+    card["live"] = False
+    return None
+
+
+def bulk(action, filt="done", ids=None, cards=None):
+    """Archive or stop many agents. Returns {"message", "count", "ids", "errors"}."""
+    import concurrent.futures as cf
+    if action not in ("archive", "stop"):
+        raise ValueError("action is archive or stop")
+    cards = cards if cards is not None else load_cards(True)
+    targets = bulk_targets(cards, action, filt, ids)
+
+    def one(c):
+        if c["kind"] == "todo":
+            act_archive(c); return None
+        if action == "stop" or busy(c) or c.get("live"):
+            err = stop_agent(c)
+            if err:
+                return err
+        if action == "archive":
+            c = {**c, "col": "done", "state": "done", "live": False}   # stopped above: nothing left running
+            msg = act_archive(c)
+            if not msg.startswith(("archived", "todo deleted")):
+                return msg
+        return None
+
+    done, errors = [], []
+    with cf.ThreadPoolExecutor(max_workers=6) as pool:
+        for c, err in zip(targets, pool.map(one, targets)):
+            if err:
+                errors.append({"id": c["id"], "name": c["name"], "error": err})
+            else:
+                done.append(c["id"])
+    verb = {"archive": "Archived", "stop": "Stopped"}[action]
+    n = len(done)
+    if not targets:
+        what = {"done": "done", "idle": "idle", "all": ""}.get(filt, "") if not ids else ""
+        msg = f"Nothing {what + ' ' if what else ''}to {action}".replace("  ", " ")
+    else:
+        msg = f"{verb} {n} agent{'s' if n != 1 else ''}"
+        if errors:
+            msg += f"; {len(errors)} couldn't: " + "; ".join(f"{e['name']} ({e['error']})" for e in errors[:3])
+    return {"message": msg, "count": n, "ids": done, "errors": errors}
 
 
 def terminal_command(card):

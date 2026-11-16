@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Loft's tools for an agent: record a walkthrough of the shared browser as a check, and run checks.
+"""Loft's tools for an agent: browser checks, the shared Android phone, and signing in with saved logins.
 
 A stdio MCP server (newline-delimited JSON-RPC), started by Claude Code from the --mcp-config Loft
 passes when it launches the agent. It calls the Loft server on 127.0.0.1 with the agent's own token,
 read from a 0600 file (never on a command line), so it can only touch its own agent's browser.
 
-  agent_mcp.py --key-file <path> --port <loft port>
+  agent_mcp.py --key-file <path> --port <loft port> [--tools checks,phone,signin]
+
+Tool groups: checks (record and run browser checks), phone (loft_phone_*: the Android device Loft
+shares with the agent, loft/mobile.py), signin (loft_sign_in: Loft fills a saved login into the
+browser or phone itself, so the agent never sees the password, loft/vault.py).
 """
 import json, sys, urllib.error, urllib.request
 
@@ -35,6 +39,88 @@ ROUTES = {"loft_record_start": ("record", lambda a: {"on": True}),
           "loft_record_discard": ("record", lambda a: {"on": False}),
           "loft_run_checks": ("run", lambda a: {"base": a.get("base_url")}),
           "loft_list_checks": ("checks", lambda a: None)}
+
+XY = {"x": {"type": "number", "description": "x in the screenshot's pixels"},
+      "y": {"type": "number", "description": "y in the screenshot's pixels"}}
+LOOK = {"look": {"type": "boolean", "description": "Return a fresh screenshot afterwards (default true)"}}
+PHONE_TOOLS = [
+    {"name": "loft_phone_screen", "description": "See the shared Android phone: a screenshot plus a numbered list of "
+     "the elements on screen (text, ids, tappable/editable, centre point in screenshot pixels). Also says which "
+     "device it is (its adb serial) and which app is in front. Starts an emulator if none is running yet.",
+     "inputSchema": {"type": "object", "properties": {"elements": {"type": "boolean", "description": "Include the element list (default true)"}}}},
+    {"name": "loft_phone_tap", "description": "Tap an element from loft_phone_screen's list (element: its number), or a "
+     "point (x, y in screenshot pixels). long: true for a long press.",
+     "inputSchema": {"type": "object", "properties": {"element": {"type": "integer"}, **XY, "long": {"type": "boolean"}, **LOOK}}},
+    {"name": "loft_phone_swipe", "description": "Swipe: direction up/down/left/right (scrolls the content the other "
+     "way, like a finger), or from (x1, y1) to (x2, y2) in screenshot pixels.",
+     "inputSchema": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
+                                                      "x1": {"type": "number"}, "y1": {"type": "number"},
+                                                      "x2": {"type": "number"}, "y2": {"type": "number"},
+                                                      "ms": {"type": "integer"}, **LOOK}}},
+    {"name": "loft_phone_type", "description": "Type text into the focused field (tap the field first). submit: "
+     "true presses Enter after. clear: true empties the field first. ASCII only.",
+     "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}, "submit": {"type": "boolean"},
+                                                      "clear": {"type": "boolean"}, **LOOK}, "required": ["text"]}},
+    {"name": "loft_phone_key", "description": "Press a key: back, home, enter, tab, delete, recents, up, down, left, "
+     "right, power, volume_up, volume_down, rotate (or any KEYCODE_ name).",
+     "inputSchema": {"type": "object", "properties": {"key": {"type": "string"}, **LOOK}, "required": ["key"]}},
+    {"name": "loft_phone_open", "description": "Open an app by package name (com.example.app), an activity "
+     "(com.example.app/.MainActivity), or a URL / deep link (https://..., myapp://...).",
+     "inputSchema": {"type": "object", "properties": {"target": {"type": "string"}, **LOOK}, "required": ["target"]}},
+    {"name": "loft_phone_install", "description": "Install (or update) an APK you built, by its path on this computer.",
+     "inputSchema": {"type": "object", "properties": {"apk": {"type": "string"}}, "required": ["apk"]}},
+    {"name": "loft_phone_logs", "description": "Recent logcat lines (errors and crashes show here), optionally only "
+     "for one app's package. level: V, D, I, W, E (default I).",
+     "inputSchema": {"type": "object", "properties": {"package": {"type": "string"}, "lines": {"type": "integer"},
+                                                      "level": {"type": "string"}}}},
+    {"name": "loft_phone_use", "description": "List the phones and emulators Loft has (no device), or switch to one: "
+     "a device serial or an emulator name (Loft starts it if needed).",
+     "inputSchema": {"type": "object", "properties": {"device": {"type": "string"}}}},
+]
+SIGNIN_TOOLS = [
+    {"name": "loft_sign_in", "description": "Sign in with one of the logins Loft keeps for this task (by its name). "
+     "Loft fills the username, password and any 2FA code itself and submits: you never see them. In the browser: "
+     "open the sign-in page first, or pass url. On the phone (where: phone): open the app's sign-in screen first.",
+     "inputSchema": {"type": "object", "properties": {"login": {"type": "string"},
+                                                      "where": {"type": "string", "enum": ["browser", "phone"]},
+                                                      "url": {"type": "string"}}, "required": ["login"]}},
+]
+CHECK_NAMES = {t["name"] for t in TOOLS}
+for _t in PHONE_TOOLS:
+    ROUTES[_t["name"]] = ("phone-" + _t["name"].rsplit("_", 1)[-1], lambda a: dict(a))
+ROUTES["loft_sign_in"] = ("sign-in", lambda a: dict(a))
+
+
+def tools():
+    groups = set((arg("--tools") or "checks").split(","))
+    out = []
+    if "checks" in groups:
+        out += TOOLS
+    if "phone" in groups:
+        out += PHONE_TOOLS
+    if "signin" in groups:
+        out += SIGNIN_TOOLS
+    return out
+
+
+def content(out):
+    """Loft's JSON answer as MCP content: a screenshot becomes an image block, the rest text."""
+    out = dict(out)
+    img = out.pop("image", None)
+    mime = out.pop("mime", "image/png")
+    text = out.pop("text", None)
+    blocks = []
+    if text:
+        blocks.append({"type": "text", "text": text})
+    rest = {k: v for k, v in out.items() if v not in (None, "", [])}
+    msg = rest.pop("message", None)
+    if msg and not text:
+        blocks.append({"type": "text", "text": msg})
+    if rest:
+        blocks.append({"type": "text", "text": json.dumps(rest, indent=1, ensure_ascii=False)})
+    if img:
+        blocks.append({"type": "image", "data": img, "mimeType": mime})
+    return blocks or [{"type": "text", "text": "Done."}]
 
 
 def arg(name):
@@ -67,13 +153,15 @@ def handle(msg):
     if m == "ping":
         return {}
     if m == "tools/list":
-        return {"tools": TOOLS}
+        return {"tools": tools()}
     if m == "tools/call":
         route = ROUTES.get(p.get("name"))
-        if not route:
+        if not route or p.get("name") not in {t["name"] for t in tools()}:
             raise LookupError(f"unknown tool {p.get('name')}")
         err, out = call_loft(route[0], route[1](p.get("arguments") or {}))
-        return {"content": [{"type": "text", "text": json.dumps(out, indent=1, ensure_ascii=False)}], "isError": err}
+        if p.get("name") in CHECK_NAMES:
+            return {"content": [{"type": "text", "text": json.dumps(out, indent=1, ensure_ascii=False)}], "isError": err}
+        return {"content": content(out), "isError": err}
     raise LookupError(f"unknown method {m}")
 
 

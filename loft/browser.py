@@ -16,7 +16,7 @@ the next use starts it again on the same profile, so logins and cookies stay.
   checks      <config>/checks.json          {scope: [{id, name, steps}]}  (scope = project id or folder)
   results     <cache>/browsers/<jid>-checks.json
 """
-import base64, itertools, json, os, secrets, shutil, signal, socket, struct, subprocess, sys, threading, time
+import base64, itertools, json, os, re, secrets, shutil, signal, socket, struct, subprocess, sys, threading, time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
@@ -24,12 +24,16 @@ from urllib.request import urlopen
 from . import paths
 
 MCP_PACKAGE = "@playwright/mcp@0.0.84"
-AGENT_NOTE = ("Loft shares a browser with you: the `loft-browser` MCP tools drive a Chromium the user watches live "
-              "in Loft and may take over. Use it to check UI changes in a real browser instead of starting another "
-              "browser. When you finish web work, leave the dev server running: Loft replays the project's recorded "
-              "browser checks against it. To turn a walkthrough into a check: loft_record_start, then walk the flow "
-              "with the browser tools (your clicks, typing and page loads are recorded), loft_record_expect for text "
-              "that must be on the page, then loft_record_save with a name. loft_run_checks runs the project's checks.")
+# The Playwright plugin opens its own (logged-out) browser window: agents with Loft's browser don't get it.
+DENY_TOOLS = "mcp__plugin_playwright_playwright"
+NOTE_SHARED = ("Loft shares a browser with you: the `loft-browser` MCP tools drive a Chromium the user watches live "
+               "in Loft and may take over. Use it whenever you need a browser; don't start another browser.")
+NOTE_WEB = ("Use it to check UI changes in a real browser. When you finish web work, leave the dev server running: "
+            "Loft replays the project's recorded "
+            "browser checks against it. To turn a walkthrough into a check: loft_record_start, then walk the flow "
+            "with the browser tools (your clicks, typing and page loads are recorded), loft_record_expect for text "
+            "that must be on the page, then loft_record_save with a name. loft_run_checks runs the project's checks.")
+AGENT_NOTE = NOTE_SHARED + " " + NOTE_WEB
 MAC_CHROME = ["Google Chrome.app/Contents/MacOS/Google Chrome", "Chromium.app/Contents/MacOS/Chromium",
               "Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "Brave Browser.app/Contents/MacOS/Brave Browser"]
 LINUX_CHROME = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"]
@@ -184,13 +188,45 @@ def free_port():
     return p
 
 
+_VERSIONS = {}
+
+
+def chrome_major(exe):
+    """The browser's major version ("142"), from `--version`; a recent guess if it won't say."""
+    if exe not in _VERSIONS:
+        try:
+            out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        m = re.search(r"(\d{2,4})\.\d+\.\d+", out)
+        _VERSIONS[exe] = m.group(1) if m else "140"
+    return _VERSIONS[exe]
+
+
+def user_agent(exe):
+    """A normal desktop Chrome user agent. Headless Chrome says "HeadlessChrome", and some sign-in pages
+    (Google's among them) refuse it."""
+    plat = "Macintosh; Intel Mac OS X 10_15_7" if paths.is_mac() else "X11; Linux x86_64"
+    return f"Mozilla/5.0 ({plat}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_major(exe)}.0.0.0 Safari/537.36"
+
+
+def chrome_args(exe, port, profile, headed=False, url="about:blank"):
+    """Every Loft Chrome. --password-store=basic: cookies are encrypted with Chrome's fixed key instead of the
+    desktop keyring, so a copied profile (an agent's, seeded from the signed-in one) can still read them."""
+    args = [exe, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"]
+    if not paths.is_mac():
+        args.append("--password-store=basic")
+    if headed:   # a plain window, no debugging port: sign-in pages treat it like any Chrome
+        return args + ["--window-size=1280,900", url]
+    return args + [f"--remote-debugging-port={port}", "--headless=new", "--mute-audio", "--window-size=1280,800",
+                   f"--user-agent={user_agent(exe)}", "--disable-blink-features=AutomationControlled", url]
+
+
 def _spawn(port, profile):
     exe = chrome_bin()
     if not exe:
         raise RuntimeError("No Chrome, Chromium, Edge or Brave found (set LOFT_CHROME).")
-    p = subprocess.Popen([exe, f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "--headless=new",
-                          "--no-first-run", "--no-default-browser-check", "--mute-audio", "--window-size=1280,800",
-                          "about:blank"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    p = subprocess.Popen(chrome_args(exe, port, profile), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
     _PROCS[p.pid] = p
     for _ in range(100):
@@ -222,11 +258,34 @@ def _chrome(jid):
         rec = record(jid) or {}
         if rec.get("cport") and alive(rec["cport"]):
             return rec
+        rec.pop("browser", None)   # a tools-only record gets a browser when you open it (the agent has no tools for it)
         cport = free_port()
         rec = {**rec, "cport": cport, "profile": rec.get("profile") or str(home() / f"profile-{jid}")}
         rec["pid"] = _spawn(cport, rec["profile"])
+        again, rec["ran"] = rec.get("ran", False), True
         _write(jid, rec)
-        return rec
+    if rec.get("account") and (rec.get("signed") or rec.get("sites")):
+        from . import sites as ST
+        try:   # you may have signed in to more since its profile was copied, or since it last closed
+            ST.share(rec["account"], [cport], only_missing=again)
+        except Exception:
+            pass
+    return rec
+
+
+def running_for(acc_id):
+    """The Chrome ports of agent browsers on this Loft account that are running now."""
+    out = []
+    for f in home().glob("*.json"):
+        if f.stem.endswith("-checks"):
+            continue
+        try:
+            rec = json.loads(f.read_text())
+        except Exception:
+            continue
+        if rec.get("account") == acc_id and rec.get("cport") and alive(rec["cport"]):
+            out.append(rec["cport"])
+    return out
 
 
 def ensure(jid):
@@ -353,23 +412,58 @@ def janitor(every=5):
         time.sleep(every)
 
 
+def browser_ok():
+    return os.environ.get("LOFT_BROWSER") != "0" and bool(chrome_bin()) and bool(shutil.which("npx"))
+
+
 def wants_browser(cwd):
     """Give a new agent a browser? Only for web-looking folders, with Chrome and npx present."""
-    if os.environ.get("LOFT_BROWSER") == "0" or not chrome_bin() or not shutil.which("npx"):
+    if not browser_ok():
         return False
     return any((Path(cwd) / m).exists() for m in WEB_MARKERS)
 
 
-def prepare(cwd):
+def prepare(cwd, account=None, tools=False, browser=False):
     """A browser record for an agent about to start (its id isn't known yet). adopt() or discard() it after.
-    No Chrome yet: the gate starts it when the agent first uses it."""
-    if not wants_browser(cwd):
-        return None
+    No Chrome yet: the gate starts it when the agent first uses it.
+
+    Web-looking folders get one; so does every agent of a Loft account with signed-in sites
+    (loft/sites.py): its profile starts as a copy of that account's signed-in profile, and so does
+    one whose task has logins to sign in with (browser=True). tools=True with no browser: just the
+    record and token for Loft's own tools (phone, sign-in, keys), no Chrome."""
+    from . import sites as ST
+    web = wants_browser(cwd)
+    have = bool(account) and browser_ok() and ST.has_browser(account)
+    if not web and not have and not (browser and browser_ok()):
+        if not tools:
+            return None
+        key = secrets.token_hex(4)
+        rec = {"browser": False, "mcp": False, "web": False, "token": secrets.token_urlsafe(24),
+               "keyfile": str(home() / f"agent-{key}.token")}
+        paths.write_private(rec["keyfile"], rec["token"])
+        return rec
     key = secrets.token_hex(4)
-    rec = {"port": free_port(), "profile": str(home() / f"profile-{key}"), "mcp": True,
+    profile = str(home() / f"profile-{key}")
+    if have:
+        ST.seed(account, profile)
+    rec = {"port": free_port(), "profile": profile, "mcp": True, "web": web,
            "token": secrets.token_urlsafe(24), "keyfile": str(home() / f"agent-{key}.token")}
+    if have:   # live cookies are copied in when the gate starts Chrome (_chrome)
+        rec.update(account=account, signed=True,
+                   sites=[{"name": s["name"], "url": s["url"]} for s in ST.for_account(account)])
     paths.write_private(rec["keyfile"], rec["token"])   # read by loft/agent_mcp.py; never on a command line
     return rec
+
+
+def agent_note(rec):
+    """The system prompt note for an agent with this browser."""
+    from . import sites as ST
+    parts = [NOTE_SHARED]
+    if rec.get("web", True):
+        parts.append(NOTE_WEB)
+    if rec.get("signed") or rec.get("sites"):
+        parts.append(ST.agent_note(rec.get("account"), rec.get("sites") or []))
+    return " ".join(parts)
 
 
 def jid_for_token(token):
@@ -396,15 +490,63 @@ def adopt(jid, rec):
 
 
 def mcp_config(rec):
-    """Two MCP servers for the agent: the browser (Playwright over CDP) and Loft's own recording tools."""
-    npx = shutil.which("npx")
-    env_path = os.pathsep.join([os.path.dirname(npx), os.environ.get("PATH", "/usr/bin:/bin")])
-    return json.dumps({"mcpServers": {
-        "loft-browser": {"command": npx, "args": ["-y", MCP_PACKAGE, "--cdp-endpoint", f"http://127.0.0.1:{rec['port']}"],
-                         "env": {"PATH": env_path}},
-        "loft": {"command": sys.executable, "args": [str(Path(__file__).with_name("agent_mcp.py")),
-                                                     "--key-file", rec["keyfile"],
-                                                     "--port", os.environ.get("LOFT_PORT", "7717")]}}})
+    """MCP servers for the agent: the browser (Playwright over CDP) when it has one, and Loft's own tools
+    (checks with a browser; the phone and sign-in when its task has them: loft/agent_mcp.py --tools)."""
+    servers, groups = {}, []
+    if rec.get("port"):
+        npx = shutil.which("npx")
+        env_path = os.pathsep.join([os.path.dirname(npx), os.environ.get("PATH", "/usr/bin:/bin")])
+        servers["loft-browser"] = {"command": npx, "args": ["-y", MCP_PACKAGE, "--cdp-endpoint",
+                                                            f"http://127.0.0.1:{rec['port']}"], "env": {"PATH": env_path}}
+        groups.append("checks")
+    if rec.get("phone"):
+        groups.append("phone")
+    if rec.get("logins"):
+        groups.append("signin")
+    if groups:
+        servers["loft"] = {"command": sys.executable, "args": [str(Path(__file__).with_name("agent_mcp.py")),
+                                                               "--key-file", rec["keyfile"],
+                                                               "--port", os.environ.get("LOFT_PORT", "7717"),
+                                                               "--tools", ",".join(groups)]}
+    return json.dumps({"mcpServers": servers})
+
+
+_URLS = {}
+
+
+def page_url(port, ttl=3.0):
+    """The newest tab's URL (cheap: the HTTP endpoint, cached a few seconds). "" if none or not running."""
+    now = time.time()
+    hit = _URLS.get(port)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    try:
+        pages = [t for t in _get(port, "/json/list", timeout=0.5) if t.get("type") == "page"]
+        url = pages[0].get("url", "") if pages else ""   # /json/list puts the most recently active tab first
+    except Exception:
+        url = ""
+    _URLS[port] = (now, url)
+    return url
+
+
+def normalize_url(url):
+    """What the address bar navigates to: a bare host or host:port becomes http://..."""
+    url = (url or "").strip()
+    if url and "://" not in url and not url.startswith("about:"):
+        url = "http://" + url
+    return url
+
+
+def nav_ok(url, remote=False):
+    """Where the address bar may go. A paired phone only opens web pages: never file://, chrome://,
+    about: (except about:blank), view-source: or the like."""
+    if not remote:
+        return True
+    url = normalize_url(url)
+    if url in ("", "about:blank"):
+        return True
+    u = urlparse(url)
+    return u.scheme in ("http", "https") and bool(u.hostname)
 
 
 def _kill(rec):
@@ -425,7 +567,8 @@ def _kill(rec):
 def discard(rec):
     if rec:
         _kill(rec)
-        shutil.rmtree(rec["profile"], ignore_errors=True)
+        if rec.get("profile"):
+            shutil.rmtree(rec["profile"], ignore_errors=True)
         if rec.get("keyfile"):
             Path(rec["keyfile"]).unlink(missing_ok=True)
 
@@ -684,10 +827,10 @@ class Viewer:
             return self.cdp.send("Input.insertText", {"text": ev["text"]}, session=self.session)
         press(self.cdp, self.session, ev.get("key", ""), ev.get("mods", 0))
 
-    def navigate(self, url):
-        url = url.strip()
-        if url and "://" not in url and not url.startswith("about:"):
-            url = "http://" + url
+    def navigate(self, url, remote=False):
+        if not nav_ok(url, remote):
+            raise ValueError("From the phone the browser opens web pages only (http and https).")
+        url = normalize_url(url)
         self.cdp.call("Page.navigate", {"url": url}, session=self.session)
 
     def back(self):
@@ -737,8 +880,12 @@ class Viewer:
 # filled fields, Enter and page loads through a CDP binding. So it records whoever drives the
 # browser: you in the card, or the agent through its browser tools.
 REC_JS = r"""
-(() => { if (window.__loftRecOn) return; window.__loftRecOn = 1;
+(() => {
   const send = o => { try { window.__loftRec(JSON.stringify(o)); } catch {} };
+  const load = () => send({ t: "load", path: location.pathname + location.search + location.hash, http: /^https?:$/.test(location.protocol) });
+  // A recorder that started on this page before left its listeners here (they report to whichever
+  // recorder holds the binding now): just tell this one where the page is.
+  if (window.__loftRecOn) return load(); window.__loftRecOn = 1;
   const CL = "a,button,input,textarea,select,label,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[onclick],[data-testid]";
   const field = el => el && (el.tagName === "TEXTAREA" || el.tagName === "SELECT" || (el.tagName === "INPUT" && !/^(checkbox|radio|submit|button|reset|file|image)$/.test(el.type)));
   const SECRET = /pass|otp|one-time|cc-|card|cvc|cvv|token|secret|api.?key|pin\b/i;
@@ -747,7 +894,7 @@ REC_JS = r"""
   addEventListener("click", e => { if (!e.isTrusted) return; const el = (e.target.closest && e.target.closest(CL)) || e.target; if (el.nodeType === 1) send({ t: "click", ...__loft.describe(el) }); }, true);
   addEventListener("change", e => { if (e.isTrusted && field(e.target)) fill(e.target); }, true);
   addEventListener("keydown", e => { if (!e.isTrusted) return; if (e.key === "Enter" && !e.isComposing) { if (field(e.target) && e.target.tagName !== "TEXTAREA") fill(e.target); send({ t: "press", key: "Enter" }); } }, true);
-  send({ t: "load", path: location.pathname + location.search + location.hash, http: /^https?:$/.test(location.protocol) });
+  load();
 })();
 """
 REC_WORLD = "loft-recorder"
@@ -774,7 +921,7 @@ class Recorder:
     NAV_AFTER_ACTION = 2.0   # a page load this soon after a click/Enter is that click's doing, not a new step
 
     def __init__(self, jid, port):
-        self.jid, self.steps, self.last_at, self.lock, self.tabs = jid, [], 0.0, threading.Lock(), set()
+        self.jid, self.steps, self.last_at, self.lock, self.tabs = jid, [], 0.0, threading.Lock(), {}
         self.cdp = CDP(_get(port, "/json/version")["webSocketDebuggerUrl"])
         self.cdp.handlers.append(self._on)
         self.cdp.call("Target.setDiscoverTargets", {"discover": True})
@@ -784,9 +931,18 @@ class Recorder:
 
     def _attach(self, tid):
         with self.lock:   # setDiscoverTargets also reports the tabs already open: attach each once
-            if tid in self.tabs:
-                return
-            self.tabs.add(tid)
+            done, mine = self.tabs.get(tid), tid not in self.tabs
+            if mine:
+                done = self.tabs[tid] = threading.Event()
+        if not mine:   # the other attach of this tab may still be running: not ready until it is
+            done.wait(10)
+            return
+        try:
+            self._instrument(tid)
+        finally:
+            done.set()
+
+    def _instrument(self, tid):
         s = self.cdp.call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
         # An isolated world: it shares the DOM (so it sees the clicks) but not the page's JS, so the
         # page can neither call the binding nor fake steps. Only isTrusted events are reported.
@@ -1154,3 +1310,126 @@ def login_storage(cdp, session, scope):
     page_eval(cdp, session, f"(d => {{ for (const [k, v] of d.local) localStorage.setItem(k, v); "
                             f"for (const [k, v] of d.session) sessionStorage.setItem(k, v); return true; }})({data})")
     return True
+
+
+# ------------------------------------------------------------------ sign in with a saved login (loft/vault.py)
+# Loft fills the form itself over CDP, so the password never goes through the agent. The page JS only
+# finds and focuses fields; the values go in with Input.insertText (works with React-controlled inputs).
+FIELDS_JS = r"""
+window.__loftFields = () => {
+  const vis = e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+    return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.disabled && !e.readOnly; };
+  const words = e => [e.name, e.id, e.placeholder, e.getAttribute("aria-label"), e.autocomplete].join(" ");
+  const all = [...document.querySelectorAll("input")].filter(vis);
+  const pw = all.find(e => e.type === "password");
+  const code = all.find(e => /one-time-code/i.test(e.autocomplete)) || all.find(e => /^(text|tel|number)$/.test(e.type)
+    && /(otp|totp|2fa|mfa|verif|one.?time|security.?code|auth.?code|\bcode\b)/i.test(words(e)) && !/(promo|coupon|zip|postal|country)/i.test(words(e)));
+  let user = all.find(e => /^(email|text|tel)$/.test(e.type) && /(username|email|user|login|account|identifier|phone)/i.test(words(e)) && e !== code);
+  if (!user && pw) { const i = all.indexOf(pw); user = all.slice(0, i).reverse().find(e => /^(email|text|tel)$/.test(e.type)); }
+  return { pw, user, code: pw ? null : code };
+};
+"""
+
+FOCUS_JS = r"""
+((what) => { const f = window.__loftFields(), el = f[what];
+  if (!el) return false;
+  el.scrollIntoView({ block: "center" }); el.focus(); if (el.select) el.select();
+  return true; })
+"""
+
+CLEAR_PW_JS = r"""
+(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  for (const e of document.querySelectorAll("input[type=password]")) { set.call(e, ""); e.dispatchEvent(new Event("input", { bubbles: true })); }
+  return true; })()
+"""
+
+
+def _eval(cdp, s, expr, timeout=10):
+    r = cdp.call("Runtime.evaluate", {"expression": FIELDS_JS + ";" + expr, "returnByValue": True, "awaitPromise": True},
+                 session=s, timeout=timeout)
+    if r.get("exceptionDetails"):
+        raise RuntimeError(r["exceptionDetails"].get("text") or "page error")
+    return r.get("result", {}).get("value")
+
+
+def _found(cdp, s):
+    try:
+        if _eval(cdp, s, "document.readyState", timeout=3) not in ("interactive", "complete"):
+            return {}
+        return _eval(cdp, s, "(() => { const f = window.__loftFields(); return {pw: !!f.pw, user: !!f.user, code: !!f.code}; })()",
+                     timeout=5) or {}
+    except Exception:
+        return {}
+
+
+def _wait_fields(cdp, s, limit, want=None):
+    end = time.time() + limit
+    f = {}
+    while time.time() < end:
+        f = _found(cdp, s)
+        if (want and f.get(want)) or (not want and any(f.values())):
+            return f
+        time.sleep(0.4)
+    return f
+
+
+def _fill(cdp, s, what, value):
+    if not _eval(cdp, s, FOCUS_JS + f"({json.dumps(what)})"):
+        return False
+    press(cdp, s, "Backspace", wait=True)   # the field's old text is selected: clear it
+    cdp.call("Input.insertText", {"text": value}, session=s)
+    return True
+
+
+def sign_in(port, username, password, code_fn=None, url=None, timeout=30):
+    """Fill a sign-in form in the newest tab of the browser on `port`: username, password, then a 2FA code
+    if the site asks for one. One-page and two-step (username, Next, password) forms. Returns
+    {"ok", "message"}; the message never holds a secret."""
+    cdp = CDP(_get(port, "/json/version")["webSocketDebuggerUrl"])
+    try:
+        pages = [t for t in _get(port, "/json/list") if t.get("type") == "page"]
+        tid = pages[0]["id"] if pages else cdp.call("Target.createTarget", {"url": "about:blank"})["targetId"]
+        s = cdp.call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+        cdp.call("Runtime.enable", session=s)
+        cdp.call("Page.enable", session=s)
+        if url:
+            cdp.call("Page.navigate", {"url": normalize_url(url)}, session=s)
+            time.sleep(1.5)
+        did, end = [], time.time() + timeout
+        f = _wait_fields(cdp, s, 10)
+        if not any(f.values()):
+            return {"ok": False, "message": "No sign-in form on this page. Open the sign-in page first (or pass url)."}
+        if f.get("user") and _fill(cdp, s, "user", username):
+            did.append("username")
+            if not f.get("pw"):            # two-step: username, Next, then the password page
+                press(cdp, s, "Enter", wait=True)
+                f = _wait_fields(cdp, s, 10, "pw")
+        if f.get("pw") and _fill(cdp, s, "pw", password):
+            did.append("password")
+            press(cdp, s, "Enter", wait=True)
+        if code_fn and (f.get("pw") or f.get("code")):
+            f2 = _wait_fields(cdp, s, max(1, min(12, end - time.time())), "code") if not f.get("code") else f
+            if f2.get("code") and _fill(cdp, s, "code", code_fn()):
+                did.append("2FA code"); press(cdp, s, "Enter", wait=True)
+        if not did:
+            return {"ok": False, "message": "Found no username, password or code field to fill."}
+        time.sleep(2.5)
+        still = _found(cdp, s)
+        if still.get("pw"):
+            try:
+                _eval(cdp, s, CLEAR_PW_JS, timeout=5)   # failed, or another step: don't leave it in the page
+            except Exception:
+                pass
+        try:
+            info = cdp.call("Target.getTargetInfo", {"targetId": tid})["targetInfo"]
+        except Exception:
+            info = {}
+        msg = f"Filled {', '.join(did)} and submitted. The page is now {info.get('url', '?')}" + \
+              (f" ({info.get('title')})" if info.get("title") else "") + "."
+        if still.get("pw"):
+            msg += " It still shows a password field, so the sign-in may have failed: take a snapshot to see why."
+        elif still.get("code") and not code_fn:
+            msg += " It asks for a code this login has no 2FA secret for: ask the user."
+        return {"ok": not still.get("pw"), "message": msg}
+    finally:
+        cdp.close()

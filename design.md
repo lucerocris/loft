@@ -12,7 +12,13 @@ backdrop; it stays out of the way until something needs you. Figma: "Loft — Re
 ## Site map and flow
 One page, two views: Inbox (list | selected agent) and Board (Todo, Working, Needs you,
 Done). The right pane shows the selected agent, the New task form, or Accounts (gear in the
-account filter row, or `,`). With no `accounts.json` yet, the pane is the first-run setup.
+account filter row, or `,`), or Browser (globe in the header, Shift+W): the account's signed-in
+sites as tabs over the live browser, with the agent browsers listed under it. With no `accounts.json` yet, the pane is the first-run setup.
+Assistant (sparkles in the header, or `A`): a plain chat with the Loft Assistant, one long-lived
+session that operates Loft for you (loft/assistant.py). Centered 720px column, your messages as
+right-aligned bubbles, its replies as unboxed markdown, its `loft` commands folded into one
+"Ran N Loft commands" line, a rounded composer at the bottom. Every card shows its title and a
+one-line summary (written by a small model when the task starts; Rename… edits both).
 
 ## Rhythm
 Dense lists, generous pane. Glass only on the floating layer (sidebar, board toolbar, pane

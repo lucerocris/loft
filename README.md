@@ -113,6 +113,12 @@ Install a build from the GitHub release (or build it yourself, below):
 - macOS: open the `.dmg` and drag Loft to Applications. Builds are unsigned for now, so the first
   time right-click Loft and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Loft.app`.
 
+### Start at login (Linux)
+
+To have Loft (and phone access, if it's on) ready as soon as you log in, add
+`~/.config/autostart/Loft.desktop` with `Exec=loft-desktop --hidden`. `--hidden` starts it in the
+tray; phone access keeps retrying until Tailscale is up.
+
 `loft app` opens the desktop app when it's installed; `loft app --browser` opens the older
 Chrome/Edge `--app` window instead.
 
@@ -194,7 +200,67 @@ Click, scroll and type in it as in any browser.
 Files: browsers and screenshots in `~/.cache/loft/browsers/` (deleted when the agent is
 archived), checks in `~/.config/loft/checks.json`, logins in `~/.config/loft/logins.json`
 (mode 0600: they are session tokens). Uses Chrome, Chromium, Edge or Brave (`LOFT_CHROME`
-overrides). The Browser tab is desktop-only: phones can't reach it.
+overrides). A paired phone can watch and drive the browsers too, but only opens web pages (no
+`file://`). Protocol: [docs/browser-protocol.md](docs/browser-protocol.md).
+
+### Signed-in sites (Loft › Browser)
+
+The globe in the header (Shift+W, or W with no agent selected) opens Loft's own browser. Pick an
+account, add the sites your agents use (a spreadsheet, a helpdesk, a dashboard: name and URL) and
+sign in to each one there once. Each Loft account has its own Chrome profile for this, kept in
+`~/.local/share/loft/browser/<account>/`.
+
+Every agent started on that account then gets a browser, even outside a web project, whose
+profile is a copy of the signed-in one, so it opens those sites already signed in. Its system
+prompt lists the sites and tells it to ask you to sign in again here rather than type
+credentials, and the Playwright plugin's separate window is turned off for it
+(`--disallowedTools mcp__plugin_playwright_playwright`). A green dot on a site tab means the
+profile holds a session for it.
+
+Some sign-in pages refuse a headless browser (captcha, 2FA, "this browser may not be secure").
+**Open in a window** opens the same profile in a normal Chrome window; sign in there and close
+it (or press **Done, close the window**), and Loft picks the session up. Agents whose browser is
+on a page show a globe chip in the list and on the board: click it to watch. The agent's header
+says whose sites it is signed in to.
+
+## Devices (Android phones and emulators)
+
+**Devices** (the tablet icon, or Settings › Devices) lists your Android emulators and any phone
+plugged in with USB debugging on. Start an emulator there, and its screen streams into Loft:
+click to tap, drag to swipe, scroll, type, and use Back, Home, Recents and Rotate. Loft starts
+emulators headless (`-no-window`), with at most two at once (`LOFT_MAX_EMULATORS`).
+
+Agents in a mobile app folder (Flutter `pubspec.yaml`, `android/`, React Native or Expo `app.json`,
+Gradle, Capacitor) get a phone automatically. You can also choose **Phone: Android phone / None**
+in New task, or pass `loft new --phone`. The agent drives the phone with the `loft_phone_*` tools:
+a screenshot plus a list of what's on screen, tap, swipe, type, keys, open an app or deep link,
+install an APK, and read logs. It builds with its usual tools on the device's serial. Each device
+belongs to one agent at a time, and you can watch and take over in Devices. iOS needs a Mac:
+see `docs/ios-handoff.md`.
+
+Needs the Android SDK (Android Studio, or `ANDROID_HOME`). `ffmpeg` gives a smooth live screen.
+CLI: `loft phone list | start [emulator] | stop <serial>`.
+
+## Vault (dev keys and logins)
+
+Settings › **Vault** keeps two kinds of things. Their values are stored in the system keyring
+(GNOME Keyring or KWallet through `secret-tool` on Linux, the Keychain on macOS) and never in
+Loft's files.
+
+- **Keys**: API keys and tokens, as env var names (`STRIPE_SECRET_KEY`). An agent gets the keys for
+  its project, its account, and every agent, as environment variables in its shell. A
+  SessionStart hook loads them, so they aren't in its command line or saved state. A project's key
+  beats an account's, which beats a global one. `loft vault run -- npm run dev` passes them to a
+  command; `loft vault env` prints `export` lines.
+- **Logins**: test users for the apps you build (username, password, sign-in page, optional 2FA
+  setup key). In New task, choose which logins a task may use. With none chosen, it gets every
+  login for its project and account. The agent only sees names and usernames. It calls
+  `loft_sign_in`, and Loft types the username, password and current 2FA code into the agent's
+  browser or phone itself.
+
+Use dev and test credentials. An agent can print an env var it has, and a filled-in password field
+is in its browser, so treat this as a guard rail, not a sandbox. For your real accounts, use
+signed-in **Sites**, where Loft never holds the password.
 
 ## Projects and grouping
 
@@ -259,6 +325,9 @@ loft/core.py      agent state, organize, cswap-profile migration, text list
 loft/board.py     cards and actions, terminal board
 loft/cli.py       commands, setup wizard, doctor
 loft/webapi.py    account routes for the app
+loft/mobile.py    Android phones and emulators: boot, leases, live screen, input, elements
+loft/agenttools.py what the loft_phone_* and loft_sign_in tools do
+loft/vault.py     dev keys and logins (values in the system keyring), the keys hook, TOTP
 server.py         local HTTP server (SSE, embedded terminal over WebSocket, voice)
 index.html        the whole app UI; design rules in design.md
 tests/            python3 -m unittest discover -s tests

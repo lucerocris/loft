@@ -2009,8 +2009,9 @@ dependencies = [
 
 [[package]]
 name = "loft-desktop"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
+ "glib",
  "serde_json",
  "sha2",
  "tauri",
