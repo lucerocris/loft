@@ -389,9 +389,11 @@ class LiveProfile(Base):
                 socket.create_connection(("127.0.0.1", self.port), timeout=0.2).close(); break
             except OSError:
                 time.sleep(0.1)
-        self.recs = []
+        self.recs, self.jids = [], []
 
     def tearDown(self):
+        for j in self.jids:   # before Base.tearDown restores the env (home() moves)
+            BR.stop(j)
         for r in self.recs:
             BR.discard(r)
         ST.stop_master("work")
@@ -413,7 +415,7 @@ class LiveProfile(Base):
     def _start(self, jid, rec):
         """Launch it like the board does: adopt the record, then connect (the gate starts Chrome)."""
         BR.adopt(jid, rec)
-        self.addCleanup(BR.stop, jid)
+        self.jids.append(jid)
         return BR.ensure(jid)["port"]
 
     def _cookies(self, port):
