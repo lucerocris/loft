@@ -824,7 +824,7 @@ def act(cid, action, body):
     if action == "create":
         code, msg, jid, todo = B.create_task(body.get("prompt"), body.get("cwd"), body.get("account") or None,
                                              body.get("project") or None, body.get("title") or "", bool(body.get("start")),
-                                             logins=body.get("logins") if isinstance(body.get("logins"), list) else None,
+                                             bank=False if body.get("bank") is False else None,
                                              phone=body.get("phone") if isinstance(body.get("phone"), bool) else None)
         if code == 200 and jid:
             TI.after_launch(jid, todo, log=log)          # title + summary arrive in a few seconds
@@ -946,9 +946,9 @@ def browser_badge(jid):
         url = BR.page_url(rec["port"])
         out["url"] = url[:300]
         out["live"] = url.startswith(("http:", "https:", "file:"))
-    if rec and rec.get("account"):   # signed in to this Loft account's sites (loft/sites.py)
-        out["account"] = rec["account"]
-        out["sites"] = len(rec.get("sites") or [])
+    if rec and rec.get("sites"):   # started signed in to the login bank (loft/sites.py)
+        out["bank"] = True
+        out["sites"] = len(rec["sites"])
     if res:
         out["checks"] = {k: res.get(k) for k in ("ok", "passed", "total", "attempts", "skipped", "at")}
     return out
@@ -1050,14 +1050,14 @@ def _alive(jid):
 
 def agent_route(card, action, body):
     jid, scope = card["id"], BR.scope_of(card)
-    if action.startswith("phone-") or action == "sign-in":
+    if action.startswith("phone-") or action == "logins":
         if body is None:
             return 405, {"message": "POST this."}
         rec = BR.record(jid) or {}
-        if action == "sign-in":
-            if not rec.get("logins"):
-                return 403, {"message": "This task has no logins."}
-            return AT.sign_in(jid, rec, body, _alive)
+        if action == "logins":
+            if not rec.get("sites"):
+                return 403, {"message": "This agent started without the login bank."}
+            return AT.logins(jid, rec, body)
         if not rec.get("phone"):
             return 403, {"message": "This agent has no phone."}
         return AT.phone(jid, action[6:], body, _alive)
@@ -1090,9 +1090,6 @@ def agent_route(card, action, body):
     return 404, {"message": f"Unknown tool action {action}"}
 
 
-# ------------------------------------------------------------------ signed-in sites
-# Per Loft account: a list of sites and one signed-in Chrome profile (loft/sites.py). Loft › Browser
-# streams it over /ws/sites/<account>; agents on the account start with a copy of it.
 # ------------------------------------------------------------------ phones (Loft › Devices)
 def mobile_list():
     st = M.status()
@@ -1129,38 +1126,28 @@ def mobile_route(method, parts, body):
     return 404, {"message": "not found"}
 
 
-# ------------------------------------------------------------------ vault (Loft › Vault): keys and logins
+# ------------------------------------------------------------------ vault (Loft › Vault): keys
+# (Its Logins tab is the login bank: /api/sites below.)
 def vault_route(method, parts, body):
-    """Desktop only. /api/vault (GET) · /api/vault/<keys|logins> (POST) · /api/vault/<kind>/<id> (PATCH, DELETE)
-    · POST /api/vault/<kind>/<id>/reveal -> the secret, for the desktop page to show or copy."""
+    """Desktop only. /api/vault (GET) · /api/vault/keys (POST) · /api/vault/keys/<id> (PATCH, DELETE)
+    · POST /api/vault/keys/<id>/reveal -> the value, for the desktop page to show or copy."""
     if method == "GET" and len(parts) == 2:
         return 200, V.public()
     kind = parts[2] if len(parts) > 2 else ""
     iid = parts[3] if len(parts) > 3 else None
-    if kind not in ("keys", "logins"):
+    if kind != "keys":
         return 404, {"message": "not found"}
     if method == "POST" and not iid:
-        if kind == "keys":
-            k = V.add_key(body.get("name"), body.get("value"), body.get("scope"), body.get("note", ""))
-            return 200, {"message": f"Saved {k['name']}", "key": k, **V.public()}
-        lg = V.add_login(body.get("label"), body.get("username"), body.get("password"), body.get("url", ""),
-                         body.get("scope"), body.get("totp", ""), body.get("note", ""))
-        return 200, {"message": f"Saved {lg['label']}", "login": lg, **V.public()}
+        k = V.add_key(body.get("name"), body.get("value"), body.get("scope"), body.get("note", ""))
+        return 200, {"message": f"Saved {k['name']}", "key": k, **V.public()}
     if method == "POST" and len(parts) == 5 and parts[4] == "reveal":
-        if kind == "keys":
-            v = V.key_value(iid)
-            return (200, {"value": v}) if v is not None else (404, {"message": "Not in the keychain."})
-        pw, code = V.login_secret(iid)
-        return (200, {"value": pw, "code": code}) if pw is not None else (404, {"message": "Not in the keychain."})
+        v = V.key_value(iid)
+        return (200, {"value": v}) if v is not None else (404, {"message": "Not in the keychain."})
     if method == "PATCH" and iid:
-        if kind == "keys":
-            V.update_key(iid, body.get("name"), body.get("value"), body.get("scope"), body.get("note"))
-        else:
-            V.update_login(iid, body.get("label"), body.get("username"), body.get("password"), body.get("url"),
-                           body.get("scope"), body.get("totp"), body.get("note"))
+        V.update_key(iid, body.get("name"), body.get("value"), body.get("scope"), body.get("note"))
         return 200, {"message": "Saved", **V.public()}
     if method == "DELETE" and iid:
-        (V.remove_key if kind == "keys" else V.remove_login)(iid)
+        V.remove_key(iid)
         return 200, {"message": "Removed", **V.public()}
     return 404, {"message": "not found"}
 
@@ -1176,8 +1163,11 @@ def _guarded(fn, *a):
         return 500, {"message": f"{type(e).__name__}: {e}"}
 
 
+# ------------------------------------------------------------------ the login bank (Loft › Vault › Logins, Loft › Browser)
+# One list of logins and one signed-in Chrome profile for every account (loft/sites.py), streamed over
+# /ws/sites/shared. Every agent starts with a copy of it. /api/sites/<account> still works for older
+# phones: any account id means the bank.
 def sites_list():
-    cfg = A.load()
     agents = []
     for c in B.load_cards(show_all_done=True):
         if c["kind"] != "agent":
@@ -1185,27 +1175,26 @@ def sites_list():
         b = browser_badge(c["id"])
         if b and BR.record(c["id"]):
             agents.append({"id": c["id"], "name": c["name"], "account": c["account"], "col": c["col"],
-                           "url": b.get("url", ""), "live": b.get("live", False), "sitesAccount": b.get("account")})
-    return {"accounts": [ST.public(a["id"]) for a in cfg["accounts"] if not a.get("pending")], "agents": agents,
-            "chrome": bool(BR.chrome_bin())}
+                           "url": b.get("url", ""), "live": b.get("live", False), "bank": bool(b.get("bank"))})
+    bank = ST.public()
+    return {**bank, "accounts": [bank], "agents": agents, "chrome": bool(BR.chrome_bin())}
 
 
 def sites_route(method, parts, body, remote=False):
-    """/api/sites[/<account>[/<site id>|/window]]. Returns (status, payload)."""
+    """/api/sites[/shared[/<login id>|/window]]. Returns (status, payload)."""
     if method == "GET" and len(parts) == 2:
         return 200, sites_list()
     if len(parts) < 3:
         return 404, {"message": "Not found."}
-    acc = parts[2]
     try:
-        ST.check_account(acc)
+        acc = ST.check_account(parts[2])
     except ValueError as e:
         return 404, {"message": str(e)}
     try:
         if method == "GET" and len(parts) == 3:
             return 200, ST.public(acc)
         if method == "POST" and len(parts) == 3:
-            site = ST.add(acc, body.get("name"), body.get("url"))
+            site = ST.add(body.get("name"), body.get("url"), body.get("note", ""))
             return 200, {"message": f"Added {site['name']}", "site": site, **ST.public(acc, with_hints=False)}
         if method == "POST" and parts[3:] == ["window"]:
             if remote:   # it opens on the desktop: only from the desktop
@@ -1216,10 +1205,10 @@ def sites_route(method, parts, body, remote=False):
             closed = ST.close_window(acc)
             return 200, {"message": "Window closed" if closed else "No window open"}
         if method == "PATCH" and len(parts) == 4:
-            site = ST.update(acc, parts[3], body.get("name"), body.get("url"))
+            site = ST.update(parts[3], body.get("name"), body.get("url"), body.get("note"))
             return 200, {"message": "Saved", "site": site}
         if method == "DELETE" and len(parts) == 4:
-            ST.remove(acc, parts[3])
+            ST.remove(parts[3])
             return 200, {"message": "Removed"}
     except LookupError as e:
         return 404, {"message": str(e)}
@@ -1668,7 +1657,7 @@ class H(BaseHTTPRequestHandler):
     # {"type": "window"} when the browser is open in a window on the desktop instead.
     def sites_ws(self, acc):
         try:
-            ST.check_account(acc)
+            acc = ST.check_account(acc)
         except ValueError:
             return self._send(404, {"error": "no such account"})
         if not self.headers.get("Sec-WebSocket-Key"):
@@ -1732,7 +1721,7 @@ class H(BaseHTTPRequestHandler):
                     elif t == "nav":
                         v.navigate(msg.get("url") or "", remote=remote)
                     elif t == "site":
-                        site = next((s for s in ST.for_account(acc) if s["id"] == msg.get("id")), None)
+                        site = next((s for s in ST.items() if s["id"] == msg.get("id")), None)
                         if not site:
                             raise ValueError("No such site.")
                         v.navigate(site["url"], remote=remote)

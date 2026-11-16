@@ -1,5 +1,6 @@
-"""Tests for signed-in sites (loft/sites.py): the per-account list, profile seeding, agent wiring,
-phone access to the browser routes, and (with Chrome) a real signed-in profile carried into an agent.
+"""Tests for the login bank (loft/sites.py): one list for every account, the move from per-account
+sites, profile seeding, agent wiring and loft_logins, phone access to the browser routes, and (with
+Chrome) a real signed-in profile carried into an agent.
 
 Config, data, cache and the claude home all go to a temp dir: ~/.config/loft, ~/.local/share/loft
 and the live Loft on 7717 are never touched.
@@ -12,7 +13,7 @@ from unittest import mock
 
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
-from loft import board as B, browser as BR, paths, sites as ST  # noqa: E402
+from loft import agenttools as AT, board as B, browser as BR, paths, sites as ST  # noqa: E402
 
 ACCOUNTS = {"version": 1, "default": "personal", "rules": [], "accounts": [
     {"id": "personal", "label": "Personal", "color": "green", "creds_dir": "default"},
@@ -40,36 +41,79 @@ class Base(unittest.TestCase):
 
 class SitesList(Base):
     def test_add_update_remove(self):
-        s = ST.add("work", "Helpdesk", "help.example.com")
+        s = ST.add("Helpdesk", "help.example.com", "work account")
         self.assertEqual(s["url"], "https://help.example.com")
-        ST.add("work", "", "http://localhost:8080/x")
-        names = [x["name"] for x in ST.for_account("work")]
-        self.assertEqual(names, ["Helpdesk", "localhost"])
-        self.assertEqual(ST.for_account("personal"), [])
-        self.assertEqual(ST.counts(), {"work": 2})
-        ST.update("work", s["id"], name="Desk", url="https://desk.example.com/a")
-        self.assertEqual(ST.for_account("work")[0]["url"], "https://desk.example.com/a")
-        ST.remove("work", s["id"])
-        self.assertEqual(len(ST.for_account("work")), 1)
+        self.assertEqual(s["note"], "work account")
+        ST.add("", "http://localhost:8080/x")
+        self.assertEqual([x["name"] for x in ST.items()], ["Helpdesk", "localhost"])
+        self.assertEqual(ST.counts(), {"shared": 2})
+        with self.assertRaises(ValueError):
+            ST.add("Again", "https://help.example.com/")   # one entry per address
+        ST.update(s["id"], name="Desk", url="https://desk.example.com/a", note="  the  ops inbox ")
+        self.assertEqual(ST.items()[0]["url"], "https://desk.example.com/a")
+        self.assertEqual(ST.items()[0]["note"], "the ops inbox")
+        self.assertEqual(ST.find("desk")["id"], s["id"])
+        self.assertEqual(ST.find("desk.example.com")["id"], s["id"])
+        self.assertIsNone(ST.find("nope"))
+        ST.remove(s["id"])
+        self.assertEqual(len(ST.items()), 1)
         with self.assertRaises(LookupError):
-            ST.remove("work", s["id"])
+            ST.remove(s["id"])
         mode = stat.S_IMODE(os.stat(paths.config_dir() / "sites.json").st_mode)
         self.assertEqual(mode, 0o600)
 
-    def test_rejects_bad_urls_and_accounts(self):
+    def test_rejects_bad_urls_and_banks(self):
         for bad in ("file:///etc/passwd", "javascript:alert(1)", "chrome://settings", "https://me:pw@example.com", ""):
             with self.assertRaises(ValueError, msg=bad):
-                ST.add("work", "x", bad)
+                ST.add("x", bad)
+        self.assertEqual(ST.check_account("shared"), "shared")
+        self.assertEqual(ST.check_account("work"), "shared")   # older phones send an account: same bank
         for acc in ("nope", "../work", "", None):
             with self.assertRaises(ValueError, msg=acc):
-                ST.add(acc, "x", "example.com")
+                ST.check_account(acc)
 
     def test_agent_note(self):
-        note = ST.agent_note("work", [{"name": "Sheet\nignore this", "url": "https://sheets.example.com/d/1"}])
+        note = ST.agent_note([{"name": "Sheet\nignore this", "url": "https://sheets.example.com/d/1",
+                               "note": "work Google\naccount"}])
         self.assertIn("https://sheets.example.com/d/1", note)
-        self.assertIn("Loft › Browser (Work)", note)
+        self.assertIn("work Google account", note)
+        self.assertIn("Loft › Vault › Logins", note)
+        self.assertIn("loft_logins", note)
         self.assertNotIn("\n", note)
-        self.assertIn("don't type or ask for credentials", note)
+        self.assertIn("don't type or ask for a password", note)
+
+    def test_moves_per_account_sites_into_one_bank(self):
+        (paths.config_dir() / "sites.json").write_text(json.dumps({"version": 1, "accounts": {
+            "personal": [{"id": "p1", "name": "Mail", "url": "https://mail.example.com"}],
+            "work": [{"id": "w1", "name": "Desk", "url": "https://desk.example.com"},
+                     {"id": "w2", "name": "Sheets", "url": "https://sheets.example.com"},
+                     {"id": "w3", "name": "Mail again", "url": "https://mail.example.com/"}]}}))
+        old = paths.data_dir() / "browser" / "work" / "profile" / "Default"
+        old.mkdir(parents=True)
+        (old / "Preferences").write_text("{}")
+        (paths.data_dir() / "browser" / "personal" / "profile").mkdir(parents=True)
+        with mock.patch.object(ST, "stop_master") as stop:
+            got = ST.items()
+        self.assertEqual([x["id"] for x in got], ["w1", "w2", "w3"])   # work first (most sites); duplicates once
+        stop.assert_called_with("work")
+        self.assertTrue((ST.profile() / "Default" / "Preferences").is_file())   # work's profile became the bank's
+        self.assertTrue(old.is_dir())   # the old one is left alone
+        self.assertEqual(json.loads((paths.config_dir() / "sites.json").read_text())["version"], 2)
+
+    def test_cookie_db_read(self):
+        db = ST.profile() / "Default" / "Network" / "Cookies"
+        db.parent.mkdir(parents=True)
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, expires_utc INTEGER)")
+        future = int((time.time() + 86400 + 11644473600) * 1e6)
+        con.execute("INSERT INTO cookies VALUES ('.example.com', 'sid', ?)", (future,))
+        con.commit(); con.close()
+        ST.add("App", "https://app.example.com")
+        ST.add("Other", "https://other.example.org")
+        pub = ST.public()
+        self.assertEqual(pub["account"], "shared")
+        self.assertEqual([x["signedIn"] for x in pub["sites"]], [True, False])
+        self.assertFalse(pub["browser"]["running"])
 
     def test_session_hint(self):
         now = time.time()
@@ -81,23 +125,10 @@ class SitesList(Base):
         self.assertEqual(ST.session_hint(cookies, "https://other.example.com"), 2)
         self.assertEqual(ST.session_hint(cookies, "https://example.net"), 0)
 
-    def test_cookie_db_read(self):
-        db = ST.profile("work") / "Default" / "Network" / "Cookies"
-        db.parent.mkdir(parents=True)
-        con = sqlite3.connect(db)
-        con.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, expires_utc INTEGER)")
-        future = int((time.time() + 86400 + 11644473600) * 1e6)
-        con.execute("INSERT INTO cookies VALUES ('.example.com', 'sid', ?)", (future,))
-        con.commit(); con.close()
-        ST.add("work", "App", "https://app.example.com")
-        pub = ST.public("work")
-        self.assertTrue(pub["sites"][0]["signedIn"])
-        self.assertFalse(pub["browser"]["running"])
-
 
 class Seed(Base):
     def test_copies_profile_without_caches_or_locks(self):
-        src = ST.profile("work")
+        src = ST.profile()
         for f in ("Default/Network/Cookies", "Default/Preferences", "Local State", "Default/Local Storage/leveldb/000003.log",
                   "Default/Cache/Cache_Data/data_0", "Default/Code Cache/js/x", "GrShaderCache/a", "Default/Sessions/Session_1"):
             (src / f).parent.mkdir(parents=True, exist_ok=True)
@@ -105,14 +136,14 @@ class Seed(Base):
         os.symlink("host-123", src / "SingletonLock")
         (src / "SingletonCookie").write_text("x")
         dest = self.tmp / "agent"
-        ST.seed("work", dest)
+        ST.seed(ST.BANK, dest)
         got = {str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file()}
         self.assertEqual(got, {"Default/Network/Cookies", "Default/Preferences", "Local State",
                                "Default/Local Storage/leveldb/000003.log"})
         self.assertFalse(os.path.lexists(dest / "SingletonLock"))
 
     def test_no_master_profile_yet(self):
-        self.assertEqual(ST.seed("work", self.tmp / "agent"), 0)
+        self.assertEqual(ST.seed(ST.BANK, self.tmp / "agent"), 0)
         self.assertTrue((self.tmp / "agent").is_dir())
 
 
@@ -164,27 +195,64 @@ class AgentWiring(Base):
     def test_no_sites_no_browser_outside_web_projects(self):
         self.assertIsNone(BR.prepare(str(self.folder), "work"))
 
-    def test_sites_give_a_seeded_browser(self):
-        ST.add("work", "Helpdesk", "https://help.example.com")
-        (ST.profile("work") / "Default").mkdir(parents=True)
-        (ST.profile("work") / "Default" / "Preferences").write_text("{}")
-        rec = BR.prepare(str(self.folder), "work")
-        self.assertEqual(rec["account"], "work")
-        self.assertFalse(rec["web"])
-        self.assertTrue((Path(rec["profile"]) / "Default" / "Preferences").is_file())
+    def test_bank_gives_every_account_a_seeded_browser(self):
+        ST.add("Helpdesk", "https://help.example.com", "ops inbox")
+        (ST.profile() / "Default").mkdir(parents=True)
+        (ST.profile() / "Default" / "Preferences").write_text("{}")
+        for acc in ("work", "personal", None):
+            rec = BR.prepare(str(self.folder), acc)
+            self.assertTrue(rec["bank"], acc)
+            self.assertEqual([s["url"] for s in rec["sites"]], ["https://help.example.com"])
+            self.assertFalse(rec["web"])
+            self.assertTrue((Path(rec["profile"]) / "Default" / "Preferences").is_file())
+            self.assertIn('"checks,logins"', BR.mcp_config(rec))   # loft_logins
         note = BR.agent_note(rec)
         self.assertIn("https://help.example.com", note)
+        self.assertIn("ops inbox", note)
         self.assertNotIn("loft_record_start", note)   # not a web project: no checks talk
-        self.assertIsNone(BR.prepare(str(self.folder), "personal"))   # sites are per account
+        self.assertIsNone(BR.prepare(str(self.folder), "work", bank=False))   # the task turned it off
         (self.folder / "package.json").write_text("{}")
         with mock.patch("shutil.which", return_value="/usr/bin/npx"):
-            web = BR.prepare(str(self.folder), "personal")
+            web = BR.prepare(str(self.folder), "personal", bank=False)
         self.assertTrue(web["web"])
-        self.assertNotIn("account", web)
+        self.assertNotIn("sites", web)
         self.assertIn("loft_record_start", BR.agent_note(web))
 
+    def test_task_can_leave_the_bank_out(self):
+        ST.add("Helpdesk", "https://help.example.com")
+        acc = {"id": "work"}
+        rec, args = B.agent_extras({"bank": False}, str(self.folder), acc)
+        self.assertIsNone(rec)
+        rec, args = B.agent_extras({}, str(self.folder), acc)
+        self.assertTrue(rec["bank"])
+        self.assertIn("https://help.example.com", args[args.index("--append-system-prompt") + 1])
+
+    def test_loft_logins_tool(self):
+        a = ST.add("Zoho Desk", "https://desk.zoho.com", "ops@company")
+        ST.add("Seller Center", "https://seller.example.com")
+        with mock.patch.object(ST, "cookie_index", return_value=[{"domain": ".zoho.com", "name": "sid", "expires": -1}]):
+            code, out = AT.logins("j1", {"port": 1, "sites": ST.items()}, {})
+            self.assertEqual(code, 200)
+            self.assertIn("signed in · Zoho Desk (https://desk.zoho.com; ops@company)", out["text"])
+            self.assertIn("NOT signed in · Seller Center", out["text"])
+            self.assertIn("refresh: true", out["text"])
+            code, out = AT.logins("j1", {"port": 1}, {"login": "zoho"})
+            self.assertNotIn("Seller", out["text"])
+            self.assertEqual(AT.logins("j1", {"port": 1}, {"login": "nope"})[0], 404)
+        with mock.patch.object(BR, "ensure", return_value={"port": 5555}), \
+                mock.patch.object(ST, "master", return_value=None), \
+                mock.patch.object(ST, "ensure_master") as em, \
+                mock.patch.object(ST, "inject_live", return_value=7) as inj, \
+                mock.patch.object(ST, "cookie_index", return_value=[]):
+            code, out = AT.logins("j1", {"port": 1}, {"refresh": True})
+        em.assert_called_once()
+        inj.assert_called_with("shared", 5555)
+        self.assertIn("Copied 7 cookies", out["text"])
+        self.assertNotIn(a["id"] + "=", out["text"])
+        self.assertEqual(AT.logins("j1", {}, {"refresh": True})[0], 400)   # no browser to refresh
+
     def test_launch_passes_the_flags(self):
-        ST.add("work", "Helpdesk", "https://help.example.com")
+        ST.add("Helpdesk", "https://help.example.com")
         seen = {}
 
         def fake_run(cmd, **kw):
@@ -200,7 +268,7 @@ class AgentWiring(Base):
         self.assertTrue(cmd[i + 2].startswith("--"))   # the variadic list ends before the prompt
         self.assertIn("https://help.example.com", cmd[cmd.index("--append-system-prompt") + 1])
         self.assertEqual(cmd[-1], "check the tickets")
-        self.assertEqual(BR.record("deadbeef")["account"], "work")
+        self.assertTrue(BR.record("deadbeef")["bank"])
 
 
 # ------------------------------------------------------------------ server routes
@@ -296,7 +364,7 @@ class Server(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         try:
-            req(cls.port, "POST", "/api/sites/work/window", {"open": False}, cls.desk)
+            req(cls.port, "POST", "/api/sites/shared/window", {"open": False}, cls.desk)
         except Exception:
             pass
         cls.p.terminate()
@@ -305,30 +373,31 @@ class Server(unittest.TestCase):
         except subprocess.TimeoutExpired:
             cls.p.kill()
         with mock.patch.dict(os.environ, temp_env(cls.tmp)):
-            for acc in ("work", "personal"):
-                ST.stop_master(acc)
+            ST.stop_master()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def test_routes(self):
         self.assertEqual(req(self.port, "GET", "/api/sites")[0], 403)
-        code, body = req(self.port, "POST", "/api/sites/work", {"name": "Desk", "url": "desk.example.com"}, self.desk)
+        code, body = req(self.port, "POST", "/api/sites/shared", {"name": "Desk", "url": "desk.example.com",
+                                                                  "note": "work"}, self.desk)
         self.assertEqual(code, 200, body)
         sid = body["site"]["id"]
         code, body = req(self.port, "GET", "/api/sites", headers=self.desk)
-        work = next(a for a in body["accounts"] if a["account"] == "work")
-        self.assertEqual([s["url"] for s in work["sites"]], ["https://desk.example.com"])
-        self.assertFalse(work["sites"][0]["signedIn"])
-        self.assertEqual(req(self.port, "POST", "/api/sites/work", {"url": "file:///etc/passwd"}, self.desk)[0], 400)
+        self.assertEqual([s["url"] for s in body["sites"]], ["https://desk.example.com"])
+        self.assertEqual([a["account"] for a in body["accounts"]], ["shared"])   # older phones: one "account"
+        self.assertFalse(body["sites"][0]["signedIn"])
+        self.assertEqual(body["sites"][0]["note"], "work")
+        self.assertEqual(req(self.port, "POST", "/api/sites/shared", {"url": "file:///etc/passwd"}, self.desk)[0], 400)
         self.assertEqual(req(self.port, "POST", "/api/sites/nobody", {"url": "example.com"}, self.desk)[0], 404)
-        self.assertEqual(req(self.port, "PATCH", f"/api/sites/work/{sid}", {"name": "Helpdesk"}, self.desk)[1]["site"]["name"], "Helpdesk")
-        # a paired phone: the sites routes yes, the desktop window and the agent browser info no
-        self.assertEqual(req(self.port, "GET", "/api/sites/work", headers=self.phone)[0], 200)
+        self.assertEqual(req(self.port, "PATCH", f"/api/sites/shared/{sid}", {"name": "Helpdesk"}, self.desk)[1]["site"]["name"], "Helpdesk")
+        # a paired phone: the sites routes yes (an account id still works), the desktop window and agent browser info no
+        self.assertEqual(req(self.port, "GET", "/api/sites/work", headers=self.phone)[1]["sites"][0]["name"], "Helpdesk")
         code, body = req(self.port, "POST", "/api/sites/personal", {"name": "Mail", "url": "mail.example.com"}, self.phone)
         self.assertEqual(code, 200, body)
-        self.assertEqual(req(self.port, "DELETE", f"/api/sites/personal/{body['site']['id']}", headers=self.phone)[0], 200)
-        self.assertEqual(req(self.port, "POST", "/api/sites/work/window", {"open": True}, self.phone)[0], 404)
+        self.assertEqual(req(self.port, "DELETE", f"/api/sites/shared/{body['site']['id']}", headers=self.phone)[0], 200)
+        self.assertEqual(req(self.port, "POST", "/api/sites/shared/window", {"open": True}, self.phone)[0], 404)
         self.assertEqual(req(self.port, "GET", "/api/browser/deadbeef", headers=self.phone)[0], 404)
-        self.assertEqual(req(self.port, "DELETE", f"/api/sites/work/{sid}", headers=self.desk)[0], 200)
+        self.assertEqual(req(self.port, "DELETE", f"/api/sites/shared/{sid}", headers=self.desk)[0], 200)
 
     @unittest.skipUnless(BR.chrome_bin(), "needs Chrome/Chromium")
     def test_sites_stream_and_phone_nav(self):
@@ -338,12 +407,12 @@ class Server(unittest.TestCase):
         srv = subprocess.Popen([sys.executable, "-m", "http.server", str(site_port), "--bind", "127.0.0.1"], cwd=site_dir,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
-            code, body = req(self.port, "POST", "/api/sites/work", {"name": "Local", "url": f"http://127.0.0.1:{site_port}/"}, self.desk)
+            code, body = req(self.port, "POST", "/api/sites/shared", {"name": "Local", "url": f"http://127.0.0.1:{site_port}/"}, self.desk)
             sid = body["site"]["id"]
-            ws = WS(self.port, f"/ws/sites/work?t={self.desk['X-Cagents-Token']}", {})
+            ws = WS(self.port, f"/ws/sites/shared?t={self.desk['X-Cagents-Token']}", {})
             self.assertIn(b"101", ws.status)
             hello = ws.until(lambda m: isinstance(m, dict) and m.get("type") == "hello")
-            self.assertEqual(hello["account"], "work")
+            self.assertEqual(hello["account"], "shared")
             ws.send({"type": "site", "id": sid})
             self.assertTrue(ws.until(lambda m: isinstance(m, dict) and m.get("type") == "url" and str(site_port) in m["url"]))
             frame = ws.until(lambda m: isinstance(m, bytes))
@@ -382,7 +451,7 @@ class LiveProfile(Base):
     def tearDown(self):
         for r in self.recs:
             BR.discard(r)
-        ST.stop_master("work")
+        ST.stop_master()
         self.srv.terminate(); self.srv.wait(5)
         super().tearDown()
 
@@ -406,18 +475,18 @@ class LiveProfile(Base):
             cdp.close()
 
     def test_signed_in_profile_carries_into_agents(self):
-        ST.add("work", "Local", f"http://127.0.0.1:{self.port}/")
-        m = ST.ensure_master("work")
+        ST.add("Local", f"http://127.0.0.1:{self.port}/")
+        m = ST.ensure_master()
         self.assertNotIn("Headless", BR._get(m["port"], "/json/version")["User-Agent"])
         self._visit(m["port"], f"http://127.0.0.1:{self.port}/login.html")
         # running master: the agent gets its live cookies
         with mock.patch.object(BR, "browser_ok", return_value=True):
-            a = BR.prepare(str(self.tmp), "work"); self.recs.append(a)
+            a = BR.prepare(str(self.tmp), "personal"); self.recs.append(a)   # any account
         self.assertEqual(self._cookies(a["port"]).get("sid"), "signed-in")
         # master closed: the cookie was saved to disk, the copy alone carries it
-        ST.stop_master("work")
-        self.assertIsNone(ST.master("work"))
-        self.assertTrue(ST.public("work")["sites"][0]["signedIn"])
+        ST.stop_master()
+        self.assertIsNone(ST.master())
+        self.assertTrue(ST.public()["sites"][0]["signedIn"])
         with mock.patch.object(BR, "browser_ok", return_value=True):
             b = BR.prepare(str(self.tmp), "work"); self.recs.append(b)
         self.assertEqual(self._cookies(b["port"]).get("sid"), "signed-in")

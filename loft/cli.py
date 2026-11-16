@@ -21,10 +21,10 @@
   loft migrate [--yes]      move agents started under `cswap run N` into ~/.claude/jobs
 
   loft new "<prompt>" [--dir D] [--account A] [--project P] [--title T] [--todo]
-          [--login NAME ...] [--phone | --no-phone]
+          [--no-logins] [--phone | --no-phone]
                             start an agent (--todo: save it to Todo instead). The title
                             and summary are written for you unless --title is given.
-                            --login: saved logins it may sign in with (Loft › Vault);
+                            --no-logins: start it without the login bank's sign-ins;
                             --phone: give it an Android phone (default: mobile app folders)
   loft reply <id|name> "<message>"
                             send a message to an agent (queued while it works)
@@ -59,10 +59,16 @@
   loft migrate-config [--yes] [--force]
                             write accounts.json from the older two-account (Work/Personal) setup
 
-  loft vault list                     keys and logins (names only, never values)
+  loft logins                         the login bank: sites every agent's browser starts signed in to
+  loft logins add <url> [--name N] [--note N]
+                            add one (then sign in once in Loft › Vault › Logins)
+  loft logins rm <name|id>
+  loft logins window [name|url]       sign in in a normal Chrome window (for sign-ins that refuse
+                            headless); `loft logins window --close` when done
+  loft vault list                     keys (names only, never values)
   loft vault add-key NAME [--project P | --account A] [--note N]
                             store a dev key or token (the value is read from stdin or asked for)
-  loft vault rm <key name|login>      remove a key or a login
+  loft vault rm <key name>            remove a key
   loft vault run [--project P] [--account A] -- <command ...>
                             run a command with the keys in scope as env vars
                             (project and account default to the current folder's)
@@ -616,9 +622,9 @@ def cmd_new(argv):
     rest = list(argv)
     d, acct, proj, title = flag(rest, "--dir"), flag(rest, "--account"), flag(rest, "--project"), flag(rest, "--title")
     todo_only = "--todo" in rest
-    logins = flags(rest, "--login")
+    bank = False if "--no-logins" in rest else None
     phone = True if "--phone" in rest else False if "--no-phone" in rest else None
-    rest = [a for a in rest if a not in ("--todo", "--phone", "--no-phone")]
+    rest = [a for a in rest if a not in ("--todo", "--phone", "--no-phone", "--no-logins")]
     if any(a.startswith("--") for a in rest):
         raise SystemExit(f"unknown option {next(a for a in rest if a.startswith('--'))}")
     prompt = " ".join(rest).strip()
@@ -633,18 +639,8 @@ def cmd_new(argv):
         pid = p["id"]
     if d:
         d = str(Path(os.path.expanduser(d)).resolve())
-    if logins:
-        from . import vault as V
-        all_ = V.load()["logins"]
-        ids = []
-        for n in logins:
-            hit = V.find_login(n, all_)
-            if not hit:
-                raise SystemExit(f"no login {n!r} (see `loft vault list`)")
-            ids.append(hit["id"])
-        logins = ids
     code, msg, jid, todo = B.create_task(prompt, d or "", acc_id, pid, title or "", start=not todo_only,
-                                         logins=logins, phone=phone)
+                                         bank=bank, phone=phone)
     if code != 200:
         raise SystemExit(msg)
     if jid:
@@ -895,6 +891,54 @@ def _vault_scope(rest):
     return V, acc_id, pid
 
 
+def cmd_logins(argv):
+    """The login bank (loft/sites.py): list, add, remove, or open it in a window to sign in."""
+    from . import sites as ST
+    sub, rest = (argv[0] if argv else "list"), list(argv[1:])
+    if sub in ("list", "ls"):
+        sites = ST.status()
+        if not sites:
+            say(C.c(C.DIM, "no logins yet. `loft logins add <url>`, or Loft › Vault › Logins in the app"))
+            return 0
+        say("the login bank: every agent Loft starts opens these already signed in")
+        for s in sites:
+            mark = C.c(C.GRN, "signed in    ") if s["signedIn"] else C.c(C.YEL, "not signed in")
+            say(f"  {mark}  {s['name']:<24} {s['url']}{'  · ' + s['note'] if s.get('note') else ''}")
+        say(C.c(C.DIM, f"profile {ST.profile()}"))
+        return 0
+    if sub == "add":
+        name, note = flag(rest, "--name", ""), flag(rest, "--note", "")
+        if not rest:
+            raise SystemExit("usage: loft logins add <url> [--name N] [--note N]")
+        try:
+            s = ST.add(name, rest[0], note)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        say(f"added {s['name']} ({s['url']}). Sign in to it once: Loft › Vault › Logins, or `loft logins window {s['id']}`")
+        return 0
+    if sub in ("rm", "remove", "delete"):
+        hit = ST.find(" ".join(rest))
+        if not hit:
+            raise SystemExit(f"no login {' '.join(rest)!r} (see `loft logins`)")
+        ST.remove(hit["id"])
+        say(f"removed {hit['name']} (its session stays in the browser profile until it expires)")
+        return 0
+    if sub == "window":
+        if "--close" in rest:
+            say("window closed" if ST.close_window() else "no window open")
+            return 0
+        want = " ".join(rest).strip()
+        hit = ST.find(want) if want else (ST.items() or [None])[0]
+        url = hit["url"] if hit else (want or None)
+        try:
+            ST.open_window(url=url)
+        except (ValueError, RuntimeError) as e:
+            raise SystemExit(str(e))
+        say("opened. Sign in there, then close the window (or `loft logins window --close`)")
+        return 0
+    raise SystemExit("usage: loft logins [list | add <url> | rm <name> | window [name] | window --close]")
+
+
 def cmd_vault(argv):
     from . import vault as V
     sub, rest = (argv[0] if argv else "list"), list(argv[1:])
@@ -913,9 +957,7 @@ def cmd_vault(argv):
         say(f"secrets in {V.backend().label}")
         for k in d["keys"]:
             say(f"  key    {k['name']:<28} {_scope_text(k['scope'])}")
-        for x in d["logins"]:
-            say(f"  login  {x['label']:<28} {x['username']}  {_scope_text(x['scope'])}{'  2FA' if x.get('totp') else ''}")
-        if not d["keys"] and not d["logins"]:
+        if not d["keys"]:
             say(C.c(C.DIM, "nothing yet. `loft vault add-key NAME`, or Loft › Vault in the app"))
         return 0
     if sub in ("add-key", "add"):
@@ -943,14 +985,13 @@ def cmd_vault(argv):
     if sub in ("rm", "remove", "delete"):
         name = " ".join(rest).strip()
         d = V.load()
-        hits = [("key", k) for k in d["keys"] if k["name"] == name or k["id"] == name] + \
-               [("login", x) for x in d["logins"] if name in (x["label"], x["id"], x["username"])]
+        hits = [("key", k) for k in d["keys"] if k["name"] == name or k["id"] == name]
         if not hits:
-            raise SystemExit(f"no key or login {name!r}")
+            raise SystemExit(f"no key {name!r}")
         if len(hits) > 1:
             raise SystemExit(f"{name!r} matches {len(hits)} entries; use its id: " + ", ".join(h[1]["id"] for h in hits))
         kind, item = hits[0]
-        (V.remove_key if kind == "key" else V.remove_login)(item["id"])
+        V.remove_key(item["id"])
         say(f"removed {kind} {name}"); return 0
     if sub in ("run", "env"):
         cmd = []
@@ -1041,6 +1082,8 @@ def main(argv=None):
         cmd_project(rest); return 0
     if cmd == "vault":
         return cmd_vault(argv[1:])
+    if cmd in ("logins", "login-bank"):
+        return cmd_logins(argv[1:])
     if cmd in ("phone", "phones", "devices"):
         return cmd_phone(argv[1:])
     if cmd == "new":

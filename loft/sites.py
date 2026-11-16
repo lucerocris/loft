@@ -1,15 +1,20 @@
-"""Signed-in sites: the web accounts every agent's browser starts signed in to.
+"""The login bank: the web accounts every agent's browser starts signed in to.
 
-Per Loft account you keep a list of sites (a spreadsheet, a helpdesk, a dashboard) and one
-persistent "master" Chrome profile. You sign in to the sites once, in Loft › Browser, which
-streams that profile's (headless) Chrome into the app. Every agent launched on the account
-then gets a browser whose profile is a copy of the master (caches and locks left out), plus
-the master's live cookies when it is running. Sign-in pages that refuse headless Chrome get
-"Open in a window": the same profile in a normal Chrome window, closed when you're done.
+One list of logins (Seller Center, a helpdesk, the work Google account for Sheets, ...) and one
+persistent Chrome profile, shared by every Loft account. You sign in to each site once, in
+Loft › Vault › Logins or Loft › Browser (both stream that profile's headless Chrome into the app).
+Every agent Loft starts, on any Claude account, then gets a browser whose profile is a copy of the
+bank's (caches and locks left out), plus the bank's live cookies when it is running, and its system
+prompt names the logins so it knows where to go. No passwords are stored: only the browser session.
+Sign-in pages that refuse headless Chrome get "Open in a window": the same profile in a normal
+Chrome window, closed when you're done.
 
-  sites      <config>/sites.json                     {"version": 1, "accounts": {acc_id: [{id, name, url}]}}
-  profile    <data>/browser/<acc_id>/profile          the signed-in Chrome profile (session cookies: 0700)
-  record     <data>/browser/<acc_id>/master.json      {mode: "headless"|"window", pid, port, profile}
+  logins     <config>/sites.json                     {"version": 2, "sites": [{id, name, url, note}]}
+  profile    <data>/browser/shared/profile            the signed-in Chrome profile (session cookies: 0700)
+  record     <data>/browser/shared/master.json        {mode: "headless"|"window", pid, port, profile}
+
+Version 1 kept one list and one profile per Loft account. The first load merges the lists, and the
+profile of the account with the most sites becomes the bank's (copied; the old ones stay on disk).
 """
 import json, os, re, secrets, shutil, signal, sqlite3, subprocess, threading, time
 from pathlib import Path
@@ -17,10 +22,12 @@ from urllib.parse import urlparse
 
 from . import accounts as A, browser as BR, paths
 
+BANK = "shared"
+BANK_LABEL = "Login bank"
 ACC_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 MAX_SITES = 40
 _LOCK = threading.RLock()
-_WINDOWS = {}   # acc_id -> Popen of an open window (reaped when it closes)
+_WINDOWS = {}   # profile path -> Popen of an open window (reaped when it closes)
 
 # Left out of copies: caches (big, rebuilt on demand), the profile lock, crash dumps, and tabs to restore.
 SKIP_NAMES = {"Cache", "Code Cache", "GPUCache", "GrShaderCache", "ShaderCache", "GraphiteDawnCache", "DawnCache",
@@ -44,19 +51,49 @@ def _file():
 def _load():
     try:
         d = json.loads(_file().read_text())
-        return d if isinstance(d.get("accounts"), dict) else {"version": 1, "accounts": {}}
     except Exception:
-        return {"version": 1, "accounts": {}}
+        return {"version": 2, "sites": []}
+    if isinstance(d.get("sites"), list):
+        return d
+    if isinstance(d.get("accounts"), dict):
+        return _migrate(d)
+    return {"version": 2, "sites": []}
 
 
 def _save(d):
     paths.write_private(_file(), json.dumps(d, indent=1))
 
 
-def check_account(acc_id):
-    if not isinstance(acc_id, str) or not ACC_RE.match(acc_id) or not A.get(acc_id):
-        raise ValueError("No such account.")
-    return acc_id
+def _migrate(old):
+    """Version 1 (a list and a profile per Loft account) to one bank. Runs once, on the first load."""
+    with _LOCK:
+        lists = {k: v for k, v in old["accounts"].items() if isinstance(v, list) and ACC_RE.match(k or "")}
+        order = sorted(lists, key=lambda k: -len(lists[k]))
+        seen, merged = set(), []
+        for acc in order:
+            for s in lists[acc]:
+                key = (s.get("url") or "").rstrip("/").lower()
+                if key and key not in seen:
+                    seen.add(key)
+                    merged.append({"id": s.get("id") or secrets.token_hex(4), "name": s.get("name") or key,
+                                   "url": s["url"], "note": s.get("note", "")})
+        best = next((a for a in order if lists[a] and (paths.data_dir() / "browser" / a / "profile").is_dir()), None)
+        if best and not profile().is_dir():
+            try:
+                stop_master(best)   # its cookies written to disk, its profile free
+            except Exception:
+                pass
+            seed(best, profile(), src=paths.data_dir() / "browser" / best / "profile")
+        d = {"version": 2, "sites": merged[:MAX_SITES], "migratedFrom": best}
+        _save(d)
+        return d
+
+
+def check_account(bank):
+    """The bank's id. Older callers (the phone) still send a Loft account id: that means the bank too."""
+    if bank == BANK or (isinstance(bank, str) and ACC_RE.match(bank) and A.get(bank)):
+        return BANK
+    raise ValueError("No such login bank.")
 
 
 def clean_url(url):
@@ -80,87 +117,103 @@ def clean_name(name, url):
     return name or urlparse(url).hostname
 
 
-def for_account(acc_id):
-    if not acc_id:
-        return []
-    return [dict(s) for s in _load()["accounts"].get(acc_id, [])]
+def clean_note(note):
+    return " ".join(str(note or "").split())[:160]
+
+
+def items():
+    """Every login in the bank: [{id, name, url, note}]."""
+    return [dict(s, note=s.get("note", "")) for s in _load()["sites"]]
 
 
 def counts():
-    return {k: len(v) for k, v in _load()["accounts"].items() if v}
+    n = len(_load()["sites"])
+    return {BANK: n} if n else {}
 
 
-def add(acc_id, name, url):
-    check_account(acc_id)
+def add(name, url, note=""):
     url = clean_url(url)
     with _LOCK:
         d = _load()
-        items = d["accounts"].setdefault(acc_id, [])
-        if len(items) >= MAX_SITES:
-            raise ValueError(f"That's {MAX_SITES} sites already. Remove one first.")
-        site = {"id": secrets.token_hex(4), "name": clean_name(name, url), "url": url}
-        items.append(site)
+        if len(d["sites"]) >= MAX_SITES:
+            raise ValueError(f"That's {MAX_SITES} logins already. Remove one first.")
+        if any(s["url"].rstrip("/").lower() == url.rstrip("/").lower() for s in d["sites"]):
+            raise ValueError("That address is in the bank already.")
+        site = {"id": secrets.token_hex(4), "name": clean_name(name, url), "url": url, "note": clean_note(note)}
+        d["sites"].append(site)
         _save(d)
     return site
 
 
-def update(acc_id, sid, name=None, url=None):
-    check_account(acc_id)
+def update(sid, name=None, url=None, note=None):
     with _LOCK:
         d = _load()
-        for s in d["accounts"].get(acc_id, []):
+        for s in d["sites"]:
             if s["id"] == sid:
                 if url is not None:
                     s["url"] = clean_url(url)
                 if name is not None:
                     s["name"] = clean_name(name, s["url"])
+                if note is not None:
+                    s["note"] = clean_note(note)
                 _save(d)
                 return dict(s)
-    raise LookupError("No such site.")
+    raise LookupError("No such login.")
 
 
-def remove(acc_id, sid):
-    check_account(acc_id)
+def remove(sid):
     with _LOCK:
         d = _load()
-        items = d["accounts"].get(acc_id, [])
-        keep = [s for s in items if s["id"] != sid]
-        if len(keep) == len(items):
-            raise LookupError("No such site.")
-        if keep:
-            d["accounts"][acc_id] = keep
-        else:
-            d["accounts"].pop(acc_id, None)
+        keep = [s for s in d["sites"] if s["id"] != sid]
+        if len(keep) == len(d["sites"]):
+            raise LookupError("No such login.")
+        d["sites"] = keep
         _save(d)
 
 
-def agent_note(acc_id, sites):
-    """The part of an agent's system prompt that names its signed-in sites. Names and URLs are the user's own."""
-    acc = A.get(acc_id) if acc_id else None
-    label = (acc or {}).get("label") or acc_id or "this account"
-    lines = "; ".join(f"{' '.join(str(s['name']).split())[:60]} ({s['url']})" for s in sites)
-    return (f"The shared browser is already signed in to the user's accounts on these sites (Loft account "
-            f"{label}): {lines}. Open them with the loft-browser tools; don't use another browser or tool for them. "
-            f"If one of them shows a sign-in page or says the session expired, don't type or ask for credentials: "
-            f"stop and ask the user to sign in again in Loft › Browser ({label}), then retry.")
+def find(name, sites=None):
+    """A login by id, name or host (what an agent passes to loft_logins), else the first name containing it."""
+    n = " ".join(str(name or "").split()).lower()
+    if not n:
+        return None
+    sites = items() if sites is None else sites
+    for s in sites:
+        if n in (s["id"].lower(), s["name"].lower(), (urlparse(s["url"]).hostname or "").lower()):
+            return s
+    return next((s for s in sites if n in s["name"].lower()), None)
+
+
+def line(s):
+    note = clean_note(s.get("note"))
+    return f"{' '.join(str(s['name']).split())[:60]} ({s['url']}{'; ' + note if note else ''})"
+
+
+def agent_note(sites):
+    """The part of an agent's system prompt that names the bank's logins. Names, URLs and notes are the user's own."""
+    return (f"Loft's login bank: the user signed in to these once, and your browser (the loft-browser tools) "
+            f"started already signed in to them: {'; '.join(line(s) for s in sites)}. When a task touches one of "
+            f"them, open it there; don't use another browser or tool for it, and don't look for credentials "
+            f"elsewhere. loft_logins lists them with whether each still looks signed in. If one shows a sign-in "
+            f"page or says the session expired, don't type or ask for a password: ask the user to sign in again "
+            f"in Loft › Vault › Logins, then call loft_logins with refresh: true and retry.")
 
 
 # ------------------------------------------------------------------ the master profile
-def root(acc_id):
+def root(acc_id=BANK):
     if not ACC_RE.match(acc_id or ""):
-        raise ValueError("No such account.")
+        raise ValueError("No such login bank.")
     return paths.data_dir() / "browser" / acc_id
 
 
-def profile(acc_id):
+def profile(acc_id=BANK):
     return root(acc_id) / "profile"
 
 
-def _rec_file(acc_id):
+def _rec_file(acc_id=BANK):
     return root(acc_id) / "master.json"
 
 
-def _read(acc_id):
+def _read(acc_id=BANK):
     try:
         return json.loads(_rec_file(acc_id).read_text())
     except Exception:
@@ -185,7 +238,7 @@ def _ours(pid, prof):
     return f"--user-data-dir={prof}" in cmd
 
 
-def master(acc_id):
+def master(acc_id=BANK):
     """The running master browser's record ({mode, pid, port, profile}), or None."""
     rec = _read(acc_id)
     if not rec:
@@ -195,9 +248,8 @@ def master(acc_id):
     return rec if rec.get("port") and BR.alive(rec["port"]) else None
 
 
-def ensure_master(acc_id):
-    """The account's signed-in browser, headless, started if needed. Raises while it is open in a window."""
-    check_account(acc_id)
+def ensure_master(acc_id=BANK):
+    """The bank's signed-in browser, headless, started if needed. Raises while it is open in a window."""
     with _LOCK:
         rec = master(acc_id)
         if rec and rec["mode"] == "window":
@@ -268,15 +320,14 @@ def _shutdown(rec, timeout=8):
             pass
 
 
-def stop_master(acc_id):
+def stop_master(acc_id=BANK):
     with _LOCK:
         _shutdown(master(acc_id))
         _rec_file(acc_id).unlink(missing_ok=True)
 
 
-def open_window(acc_id, url=None):
+def open_window(acc_id=BANK, url=None):
     """The signed-in profile in a normal Chrome window on this machine, for sign-ins that refuse headless."""
-    check_account(acc_id)
     exe = BR.chrome_bin()
     if not exe:
         raise RuntimeError("No Chrome, Chromium, Edge or Brave found (set LOFT_CHROME).")
@@ -300,7 +351,7 @@ def open_window(acc_id, url=None):
         return rec
 
 
-def close_window(acc_id):
+def close_window(acc_id=BANK):
     with _LOCK:
         rec = master(acc_id)
         if not rec or rec["mode"] != "window":
@@ -319,7 +370,7 @@ def _browser_cdp(port):
     return BR.CDP(BR._get(port, "/json/version")["webSocketDebuggerUrl"])
 
 
-def live_cookies(acc_id):
+def live_cookies(acc_id=BANK):
     """All cookies of the running headless master, straight from Chrome; None if it isn't running."""
     rec = master(acc_id)
     if not rec or rec["mode"] != "headless":
@@ -388,7 +439,7 @@ def _db_cookies(prof):
     return out
 
 
-def cookie_index(acc_id):
+def cookie_index(acc_id=BANK):
     """[(domain, name, expires)] for the account's signed-in profile: live if running, else from disk."""
     try:
         live = live_cookies(acc_id)
@@ -413,10 +464,10 @@ def session_hint(cookies, url):
 
 
 # ------------------------------------------------------------------ agent profiles
-def seed(acc_id, dest):
-    """Copy the account's signed-in profile to a new agent profile. Returns how many files were copied.
+def seed(acc_id, dest, src=None):
+    """Copy the bank's signed-in profile to a new agent profile. Returns how many files were copied.
     Files that vanish or are locked mid-copy (the master may be running) are skipped."""
-    src = profile(acc_id)
+    src = Path(src) if src else profile(acc_id)
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     if not src.is_dir():
@@ -444,20 +495,24 @@ def seed(acc_id, dest):
     return n
 
 
-def public(acc_id, with_hints=True):
-    """One account's sites and browser state, for the UI and the phone."""
-    acc = A.get(acc_id)
-    rec = master(acc_id)
-    items = for_account(acc_id)
-    if with_hints and items:
+def status(sites=None):
+    """The logins with a signed-in hint each: cookies = how many the profile holds for the site."""
+    sites = items() if sites is None else [dict(x) for x in sites]
+    if sites:
         try:
-            idx = cookie_index(acc_id)
+            idx = cookie_index()
         except Exception:
             idx = []
-        for s in items:
+        for s in sites:
             s["cookies"] = session_hint(idx, s["url"])
             s["signedIn"] = s["cookies"] > 0
-    return {"account": acc_id, "label": acc["label"] if acc else acc_id,
-            "hex": A.COLORS.get((acc or {}).get("color"), "#6E737B"), "sites": items,
+    return sites
+
+
+def public(acc_id=BANK, with_hints=True):
+    """The bank's logins and browser state, for the UI and the phone. `account` stays for older clients."""
+    rec = master()
+    sites = status() if with_hints else items()
+    return {"account": BANK, "label": BANK_LABEL, "hex": "#6E737B", "sites": sites,
             "browser": {"running": bool(rec), "window": bool(rec and rec["mode"] == "window")},
-            "profile": profile(acc_id).is_dir()}
+            "profile": profile().is_dir()}

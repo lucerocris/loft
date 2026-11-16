@@ -1,25 +1,22 @@
-"""Keys and logins: dev keys and tokens agents get as env vars, and logins their browser or phone signs in with.
+"""Keys: dev keys and tokens agents get as env vars.
 
-Names, scopes and usernames live in a JSON file; every secret value lives in the OS keychain:
+(Web logins aren't here: they live in the login bank, loft/sites.py, as a signed-in browser
+session, never as a password.) Names and scopes live in a JSON file; every value lives in the OS
+keychain:
 
-  metadata   <config>/vault.json   {"version": 1, "keys": [...], "logins": [...]}   (no secret values)
+  metadata   <config>/vault.json   {"version": 1, "keys": [...]}   (no secret values)
   secrets    libsecret (`secret-tool`, Linux) or the login Keychain (`security`, macOS),
              service "loft", account "<kind>:<id>"; or, with neither, <data>/vault-secrets.json (0600)
 
   key     {id, name: "STRIPE_SECRET_KEY", scope, note, created, updated}
-  login   {id, label: "Staging admin", url, username, scope, totp: bool, note, created, updated}
   scope   {"kind": "global"} | {"kind": "account", "id": acc_id} | {"kind": "project", "id": project_id}
 
-What an agent gets (loft/board.py launches it):
-  - keys in scope, as env vars in its shell: a SessionStart hook (`loft vault hook <ticket>`) writes
-    them to $CLAUDE_ENV_FILE, so the values never sit in its command line, saved state or transcript
-    (unless it prints them);
-  - the labels and usernames of the logins in scope, never the passwords: it signs in with the
-    loft_sign_in tool, which fills the form itself (server.py, loft/browser.py, loft/mobile.py).
+What an agent gets (loft/board.py launches it): the keys in scope, as env vars in its shell. A
+SessionStart hook (`loft vault hook <ticket>`) writes them to $CLAUDE_ENV_FILE, so the values never
+sit in its command line, saved state or transcript (unless it prints them).
 """
-import base64, hashlib, hmac, json, os, re, secrets, shutil, struct, subprocess, threading, time
+import json, os, re, secrets, shutil, subprocess, threading, time
 from pathlib import Path
-from urllib.parse import urlparse
 
 from . import paths
 
@@ -162,7 +159,7 @@ def load():
         d = json.loads(_file().read_text())
     except Exception:
         d = {}
-    return {"version": 1, "keys": list(d.get("keys") or []), "logins": list(d.get("logins") or [])}
+    return {"version": 1, "keys": list(d.get("keys") or [])}
 
 
 def save(d):
@@ -287,126 +284,6 @@ def key_names_for(account=None, project=None):
     return sorted({k["name"] for k in load()["keys"] if in_scope(k, account, project)})
 
 
-# ------------------------------------------------------------------ logins
-def clean_url(url):
-    url = str(url or "").strip()
-    if not url:
-        return ""
-    if "://" not in url:
-        url = ("http://" if url.startswith(("localhost", "127.0.0.1")) else "https://") + url
-    u = urlparse(url)
-    if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
-        raise ValueError("The address is a web address like https://app.example.com (no user@ in it).")
-    return url[:500]
-
-
-def clean_totp(secret):
-    s = re.sub(r"[\s-]", "", str(secret or "")).upper()
-    if s.startswith("OTPAUTH://"):
-        from urllib.parse import parse_qs
-        s = ((parse_qs(urlparse(secret.strip()).query).get("secret") or [""])[0]).upper()
-    s = s.rstrip("=")
-    try:
-        base64.b32decode(s + "=" * (-len(s) % 8))
-    except Exception:
-        raise ValueError("That 2FA secret isn't a base32 setup key (the text under the QR code).")
-    if len(s) < 16:
-        raise ValueError("That 2FA secret is too short.")
-    return s
-
-
-def totp(secret, at=None, step=30, digits=6):
-    """RFC 6238 code (SHA-1, 30 s, 6 digits: what authenticator apps use)."""
-    key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
-    msg = struct.pack(">Q", int((time.time() if at is None else at) // step))
-    h = hmac.new(key, msg, hashlib.sha1).digest()
-    o = h[-1] & 0x0F
-    n = (struct.unpack(">I", h[o:o + 4])[0] & 0x7FFFFFFF) % (10 ** digits)
-    return str(n).zfill(digits)
-
-
-def add_login(label, username, password, url="", scope=None, totp_secret="", note=""):
-    label = " ".join(str(label or "").split())[:60]
-    if not label:
-        raise ValueError("Name this login, e.g. Staging admin.")
-    username = str(username or "").strip()[:200]
-    if not username:
-        raise ValueError("Type the username or email.")
-    url, scope, password = clean_url(url), clean_scope(scope), _value(password, "password")
-    t = clean_totp(totp_secret) if totp_secret else ""
-    with _LOCK:
-        d = load()
-        if len(d["logins"]) >= MAX_ITEMS:
-            raise ValueError("Too many logins.")
-        lg = {"id": secrets.token_hex(4), "label": label, "url": url, "username": username, "scope": scope,
-              "totp": bool(t), "note": str(note or "")[:200], "created": _now(), "updated": _now()}
-        backend().set(_ref("login", lg["id"], "password"), f"{label} ({username})", password)
-        if t:
-            backend().set(_ref("login", lg["id"], "totp"), f"{label} 2FA", t)
-        d["logins"].append(lg); save(d)
-        return lg
-
-
-def update_login(lid, label=None, username=None, password=None, url=None, scope=None, totp_secret=None, note=None):
-    with _LOCK:
-        d = load(); lg = _find(d, "logins", lid)
-        if label is not None:
-            lg["label"] = " ".join(str(label).split())[:60] or lg["label"]
-        if username is not None:
-            lg["username"] = str(username).strip()[:200] or lg["username"]
-        if url is not None:
-            lg["url"] = clean_url(url)
-        if scope is not None:
-            lg["scope"] = clean_scope(scope)
-        if note is not None:
-            lg["note"] = str(note)[:200]
-        if password:
-            backend().set(_ref("login", lid, "password"), f"{lg['label']} ({lg['username']})", _value(password, "password"))
-        if totp_secret is not None:
-            if totp_secret == "":
-                backend().delete(_ref("login", lid, "totp")); lg["totp"] = False
-            else:
-                backend().set(_ref("login", lid, "totp"), f"{lg['label']} 2FA", clean_totp(totp_secret)); lg["totp"] = True
-        lg["updated"] = _now(); save(d)
-        return lg
-
-
-def remove_login(lid):
-    with _LOCK:
-        d = load(); _find(d, "logins", lid)
-        backend().delete(_ref("login", lid, "password")); backend().delete(_ref("login", lid, "totp"))
-        d["logins"] = [x for x in d["logins"] if x["id"] != lid]; save(d)
-
-
-def login(lid):
-    return next((x for x in load()["logins"] if x["id"] == lid), None)
-
-
-def login_secret(lid):
-    """(password, current 2FA code or None). Only for Loft's own form filling."""
-    pw = backend().get(_ref("login", lid, "password"))
-    t = backend().get(_ref("login", lid, "totp"))
-    return pw, (totp(t) if t else None)
-
-
-def logins_for(account=None, project=None, only=None):
-    """Logins an agent may use: in scope, and (when the task picked some) only those."""
-    out = [x for x in load()["logins"] if in_scope(x, account, project)]
-    if only:
-        want = set(only)
-        out = [x for x in load()["logins"] if x["id"] in want] or out
-    return out
-
-
-def find_login(name, allowed):
-    """The login an agent named (id, label or username), among the ones it was given."""
-    n = str(name or "").strip().lower()
-    for x in allowed:
-        if n in (x["id"].lower(), x["label"].lower(), x["username"].lower()):
-            return x
-    return None
-
-
 def mask(v):
     if not v:
         return ""
@@ -414,15 +291,8 @@ def mask(v):
 
 
 # ------------------------------------------------------------------ what an agent gets
-def agent_note(logins, key_names):
+def agent_note(key_names):
     parts = []
-    if logins:
-        ls = "; ".join(f"{x['label']} ({x['username']}{', ' + urlparse(x['url']).hostname if x.get('url') else ''})"
-                       for x in logins)
-        parts.append("Loft keeps logins for this task and fills them in for you: " + ls + ". To sign in, open the "
-                     "sign-in page (or focus the username field on the phone), then call loft_sign_in with the "
-                     "login's name. You never see or type the passwords and 2FA codes: don't ask the user for them, "
-                     "don't try to read them back from the page, and don't save them anywhere.")
     if key_names:
         parts.append("Loft put these dev keys in your shell's environment: " + ", ".join(key_names) + ". Use them as "
                      "env vars ($NAME) in commands and dev servers; `loft vault run -- <cmd>` also passes them to a "
@@ -438,11 +308,11 @@ def ticket_dir():
     return paths.data_dir() / TICKETS
 
 
-def make_ticket(account, project, logins=None):
+def make_ticket(account, project):
     """A launch ticket: which account and project an agent's keys come from. Its id goes in the hook command."""
     tid = secrets.token_hex(8)
     paths.write_private(ticket_dir() / f"{tid}.json", json.dumps({"account": account, "project": project,
-                                                                  "logins": logins or [], "at": time.time()}))
+                                                                  "at": time.time()}))
     return tid
 
 
@@ -498,6 +368,4 @@ def run_hook(tid, env_file):
 def public(accounts=None, projects=None):
     d = load()
     return {"backend": backend().name, "where": backend().label,
-            "keys": [{k: x.get(k) for k in ("id", "name", "scope", "note", "updated")} for x in d["keys"]],
-            "logins": [{k: x.get(k) for k in ("id", "label", "url", "username", "scope", "totp", "note", "updated")}
-                       for x in d["logins"]]}
+            "keys": [{k: x.get(k) for k in ("id", "name", "scope", "note", "updated")} for x in d["keys"]]}

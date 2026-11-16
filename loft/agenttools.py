@@ -1,12 +1,12 @@
-"""What the loft_phone_* and loft_sign_in tools do (loft/agent_mcp.py -> POST /api/agent/<action> -> here).
+"""What the loft_phone_* and loft_logins tools do (loft/agent_mcp.py -> POST /api/agent/<action> -> here).
 
-An agent drives only the phone Loft leased to it (loft/mobile.py) and signs in only with the logins its
-task was given (its record's "logins", loft/vault.py). Coordinates the agent sees and sends are in the
-screenshot's pixels; Loft scales them to the device.
+An agent drives only the phone Loft leased to it (loft/mobile.py). Coordinates the agent sees and sends
+are in the screenshot's pixels; Loft scales them to the device. loft_logins reads the login bank
+(loft/sites.py) and can copy its newest cookies into the agent's own browser.
 """
 import base64, time
 
-from . import browser as BR, mobile as M, vault as V
+from . import browser as BR, mobile as M, sites as ST
 
 SHOT_W = 540
 
@@ -116,66 +116,34 @@ def phone(jid, action, body, alive):
     return 200, look(serial, True, msg + ".")
 
 
-def sign_in(jid, rec, body, alive):
-    """loft_sign_in: fill one of the agent's logins into its browser or phone. Never returns a secret."""
-    allowed = [x for x in (V.login(i) for i in (rec or {}).get("logins") or []) if x]
-    lg = V.find_login(body.get("login"), allowed)
-    if not lg:
-        names = ", ".join(f"{x['label']} ({x['username']})" for x in allowed) or "none"
-        return 400, {"message": f"No login named {body.get('login')!r} for this task. Its logins: {names}."}
-    pw, _ = V.login_secret(lg["id"])
-    if not pw:
-        return 400, {"message": f"The password for {lg['label']} is missing from the keychain. Ask the user to "
-                                f"save it again in Loft › Vault."}
-    code_fn = (lambda: V.login_secret(lg["id"])[1]) if lg.get("totp") else None
-    where = body.get("where") or ("browser" if (rec or {}).get("port") else "phone")
-    if where == "phone":
-        return 200, {"message": phone_sign_in(jid, lg, pw, code_fn, alive)}
-    if not (rec or {}).get("port"):
-        return 400, {"message": "You have no Loft browser. Use where: phone, or ask the user."}
-    port = BR.ensure(jid)["port"]
-    url = (body.get("url") or "").strip() or None
-    if url and not BR.nav_ok(url):
-        raise ValueError("url is a web address (http or https).")
-    if not url and lg.get("url") and BR.page_url(port, ttl=0) in ("", "about:blank"):
-        url = lg["url"]
-    out = BR.sign_in(port, lg["username"], pw, code_fn, url)
-    return 200 if out["ok"] else 409, {"message": f"{lg['label']}: {out['message']}"}
-
-
-def phone_sign_in(jid, lg, pw, code_fn, alive):
-    serial, _ = M.device_for(jid, None, alive=alive)
-    els = M.ui(serial)
-    edits = [e for e in els if e.get("edit")]
-    pwf = next((e for e in edits if e.get("password")), None)
-    did = []
-    user = None
-    if pwf:
-        before = [e for e in edits if not e.get("password") and e["n"] < pwf["n"]]
-        user = before[-1] if before else None
-    elif edits:
-        user = next((e for e in edits if e.get("focused")), edits[0])
-    if not user and not pwf:
-        return "No text fields on screen. Open the app's sign-in screen first."
-    if user:
-        M.tap(serial, user["x"], user["y"], wait=True); time.sleep(0.4)
-        M.clear_field(serial); M.type_text(serial, lg["username"], wait=True); did.append("username")
-        if not pwf:   # two-step: username, Next, then the password screen
-            M.key(serial, "enter", wait=True); time.sleep(2.0)
-            pwf = next((e for e in M.ui(serial) if e.get("password")), None)
-    if pwf:
-        M.tap(serial, pwf["x"], pwf["y"], wait=True); time.sleep(0.4)
-        M.type_text(serial, pw, wait=True); did.append("password")
-        M.key(serial, "enter", wait=True)
-    if code_fn:
-        time.sleep(2.5)
-        fields = [e for e in M.ui(serial) if e.get("edit") and not e.get("password")]
-        if fields and not any(e.get("password") for e in M.ui(serial)):
-            f = next((e for e in fields if e.get("focused")), fields[0])
-            M.tap(serial, f["x"], f["y"], wait=True); time.sleep(0.3)
-            M.type_text(serial, code_fn(), wait=True); M.key(serial, "enter", wait=True); did.append("2FA code")
-    time.sleep(1.5)
-    still = any(e.get("password") for e in M.ui(serial))
-    return (f"{lg['label']}: filled {', '.join(did) or 'nothing'} and submitted."
-            + (" A password field is still showing, so it may have failed: look at the screen." if still else
-               " Look at the screen to check you're in."))
+def logins(jid, rec, body):
+    """loft_logins: the bank's logins with a signed-in hint each; refresh: true first copies the bank's
+    current cookies into this agent's browser (after the user signed in again). Never returns a cookie."""
+    refreshed = None
+    if body.get("refresh"):
+        if not (rec or {}).get("port"):
+            return 400, {"message": "You have no Loft browser to refresh."}
+        port = BR.ensure(jid)["port"]
+        try:
+            master = ST.master()
+            if master and master.get("mode") == "window":
+                return 409, {"message": "The user has the login bank open in a window. Ask them to close it "
+                                        "(Loft › Vault › Logins › Close window), then try again."}
+            ST.ensure_master()
+            refreshed = ST.inject_live(ST.BANK, port)
+        except Exception as e:
+            return 500, {"message": f"Couldn't refresh the sign-ins: {e}"}
+    sites = ST.status()
+    want = (body.get("login") or "").strip()
+    if want:
+        hit = ST.find(want, sites)
+        if not hit:
+            return 404, {"message": f"No login named {want!r} in the bank. It has: "
+                                    f"{', '.join(s['name'] for s in sites) or 'nothing yet'}."}
+        sites = [hit]
+    lines = [f"{'signed in' if s['signedIn'] else 'NOT signed in'} · {ST.line(s)}" for s in sites]
+    head = (f"Copied {refreshed} cookies from the login bank into your browser. " if refreshed is not None else "")
+    tail = ("" if all(s["signedIn"] for s in sites) else
+            " For one that's not signed in, ask the user to sign in to it in Loft › Vault › Logins, then call "
+            "loft_logins with refresh: true.")
+    return 200, {"text": head + ("\n".join(lines) or "The login bank is empty.") + tail}

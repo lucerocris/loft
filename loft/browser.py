@@ -271,16 +271,16 @@ def wants_browser(cwd):
     return any((Path(cwd) / m).exists() for m in WEB_MARKERS)
 
 
-def prepare(cwd, account=None, tools=False, browser=False):
+def prepare(cwd, account=None, tools=False, browser=False, bank=True):
     """Start a browser before the agent exists (its id isn't known yet). adopt() or discard() it after.
 
-    Web-looking folders get one; so does every agent of a Loft account with signed-in sites
-    (loft/sites.py): its profile starts as a copy of that account's signed-in profile, and so does
-    one whose task has logins to sign in with (browser=True). tools=True with no browser: just the
-    record and token for Loft's own tools (phone, sign-in, keys), no Chrome."""
+    Web-looking folders get one; so does every agent while the login bank has logins (loft/sites.py),
+    whatever its account: its profile starts as a copy of the bank's signed-in profile. browser=True
+    forces one. tools=True with no browser: just the record and token for Loft's own tools (phone,
+    keys), no Chrome. bank=False leaves the bank out (the task said so)."""
     from . import sites as ST
     web = wants_browser(cwd)
-    have = ST.for_account(account) if account and browser_ok() else []
+    have = ST.items() if bank and browser_ok() else []
     if not web and not have and not (browser and browser_ok()):
         if not tools:
             return None
@@ -292,13 +292,13 @@ def prepare(cwd, account=None, tools=False, browser=False):
     key = secrets.token_hex(4)
     port, profile = free_port(), str(home() / f"profile-{key}")
     if have:
-        ST.seed(account, profile)
+        ST.seed(ST.BANK, profile)
     rec = {"port": port, "profile": profile, "pid": _spawn(port, profile), "mcp": True, "web": web,
            "token": secrets.token_urlsafe(24), "keyfile": str(home() / f"agent-{key}.token")}
     if have:
-        rec.update(account=account, sites=[{"name": s["name"], "url": s["url"]} for s in have])
+        rec.update(bank=True, sites=[{k: s.get(k, "") for k in ("id", "name", "url", "note")} for s in have])
         try:   # the signed-in browser may hold newer cookies than its files on disk
-            ST.inject_live(account, port)
+            ST.inject_live(ST.BANK, port)
         except Exception:
             pass
     paths.write_private(rec["keyfile"], rec["token"])   # read by loft/agent_mcp.py; never on a command line
@@ -312,7 +312,7 @@ def agent_note(rec):
     if rec.get("web", True):
         parts.append(NOTE_WEB)
     if rec.get("sites"):
-        parts.append(ST.agent_note(rec.get("account"), rec["sites"]))
+        parts.append(ST.agent_note(rec["sites"]))
     return " ".join(parts)
 
 
@@ -339,7 +339,7 @@ def adopt(jid, rec):
 
 def mcp_config(rec):
     """MCP servers for the agent: the browser (Playwright over CDP) when it has one, and Loft's own tools
-    (checks with a browser; the phone and sign-in when its task has them: loft/agent_mcp.py --tools)."""
+    (checks with a browser; the phone and the login bank when it has them: loft/agent_mcp.py --tools)."""
     servers, groups = {}, []
     if rec.get("port"):
         npx = shutil.which("npx")
@@ -349,8 +349,8 @@ def mcp_config(rec):
         groups.append("checks")
     if rec.get("phone"):
         groups.append("phone")
-    if rec.get("logins"):
-        groups.append("signin")
+    if rec.get("sites"):
+        groups.append("logins")
     if groups:
         servers["loft"] = {"command": sys.executable, "args": [str(Path(__file__).with_name("agent_mcp.py")),
                                                                "--key-file", rec["keyfile"],
@@ -1135,126 +1135,3 @@ def login_storage(cdp, session, scope):
     page_eval(cdp, session, f"(d => {{ for (const [k, v] of d.local) localStorage.setItem(k, v); "
                             f"for (const [k, v] of d.session) sessionStorage.setItem(k, v); return true; }})({data})")
     return True
-
-
-# ------------------------------------------------------------------ sign in with a saved login (loft/vault.py)
-# Loft fills the form itself over CDP, so the password never goes through the agent. The page JS only
-# finds and focuses fields; the values go in with Input.insertText (works with React-controlled inputs).
-FIELDS_JS = r"""
-window.__loftFields = () => {
-  const vis = e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e);
-    return r.width > 4 && r.height > 4 && s.visibility !== "hidden" && s.display !== "none" && !e.disabled && !e.readOnly; };
-  const words = e => [e.name, e.id, e.placeholder, e.getAttribute("aria-label"), e.autocomplete].join(" ");
-  const all = [...document.querySelectorAll("input")].filter(vis);
-  const pw = all.find(e => e.type === "password");
-  const code = all.find(e => /one-time-code/i.test(e.autocomplete)) || all.find(e => /^(text|tel|number)$/.test(e.type)
-    && /(otp|totp|2fa|mfa|verif|one.?time|security.?code|auth.?code|\bcode\b)/i.test(words(e)) && !/(promo|coupon|zip|postal|country)/i.test(words(e)));
-  let user = all.find(e => /^(email|text|tel)$/.test(e.type) && /(username|email|user|login|account|identifier|phone)/i.test(words(e)) && e !== code);
-  if (!user && pw) { const i = all.indexOf(pw); user = all.slice(0, i).reverse().find(e => /^(email|text|tel)$/.test(e.type)); }
-  return { pw, user, code: pw ? null : code };
-};
-"""
-
-FOCUS_JS = r"""
-((what) => { const f = window.__loftFields(), el = f[what];
-  if (!el) return false;
-  el.scrollIntoView({ block: "center" }); el.focus(); if (el.select) el.select();
-  return true; })
-"""
-
-CLEAR_PW_JS = r"""
-(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-  for (const e of document.querySelectorAll("input[type=password]")) { set.call(e, ""); e.dispatchEvent(new Event("input", { bubbles: true })); }
-  return true; })()
-"""
-
-
-def _eval(cdp, s, expr, timeout=10):
-    r = cdp.call("Runtime.evaluate", {"expression": FIELDS_JS + ";" + expr, "returnByValue": True, "awaitPromise": True},
-                 session=s, timeout=timeout)
-    if r.get("exceptionDetails"):
-        raise RuntimeError(r["exceptionDetails"].get("text") or "page error")
-    return r.get("result", {}).get("value")
-
-
-def _found(cdp, s):
-    try:
-        if _eval(cdp, s, "document.readyState", timeout=3) not in ("interactive", "complete"):
-            return {}
-        return _eval(cdp, s, "(() => { const f = window.__loftFields(); return {pw: !!f.pw, user: !!f.user, code: !!f.code}; })()",
-                     timeout=5) or {}
-    except Exception:
-        return {}
-
-
-def _wait_fields(cdp, s, limit, want=None):
-    end = time.time() + limit
-    f = {}
-    while time.time() < end:
-        f = _found(cdp, s)
-        if (want and f.get(want)) or (not want and any(f.values())):
-            return f
-        time.sleep(0.4)
-    return f
-
-
-def _fill(cdp, s, what, value):
-    if not _eval(cdp, s, FOCUS_JS + f"({json.dumps(what)})"):
-        return False
-    press(cdp, s, "Backspace", wait=True)   # the field's old text is selected: clear it
-    cdp.call("Input.insertText", {"text": value}, session=s)
-    return True
-
-
-def sign_in(port, username, password, code_fn=None, url=None, timeout=30):
-    """Fill a sign-in form in the newest tab of the browser on `port`: username, password, then a 2FA code
-    if the site asks for one. One-page and two-step (username, Next, password) forms. Returns
-    {"ok", "message"}; the message never holds a secret."""
-    cdp = CDP(_get(port, "/json/version")["webSocketDebuggerUrl"])
-    try:
-        pages = [t for t in _get(port, "/json/list") if t.get("type") == "page"]
-        tid = pages[0]["id"] if pages else cdp.call("Target.createTarget", {"url": "about:blank"})["targetId"]
-        s = cdp.call("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
-        cdp.call("Runtime.enable", session=s)
-        cdp.call("Page.enable", session=s)
-        if url:
-            cdp.call("Page.navigate", {"url": normalize_url(url)}, session=s)
-            time.sleep(1.5)
-        did, end = [], time.time() + timeout
-        f = _wait_fields(cdp, s, 10)
-        if not any(f.values()):
-            return {"ok": False, "message": "No sign-in form on this page. Open the sign-in page first (or pass url)."}
-        if f.get("user") and _fill(cdp, s, "user", username):
-            did.append("username")
-            if not f.get("pw"):            # two-step: username, Next, then the password page
-                press(cdp, s, "Enter", wait=True)
-                f = _wait_fields(cdp, s, 10, "pw")
-        if f.get("pw") and _fill(cdp, s, "pw", password):
-            did.append("password")
-            press(cdp, s, "Enter", wait=True)
-        if code_fn and (f.get("pw") or f.get("code")):
-            f2 = _wait_fields(cdp, s, max(1, min(12, end - time.time())), "code") if not f.get("code") else f
-            if f2.get("code") and _fill(cdp, s, "code", code_fn()):
-                did.append("2FA code"); press(cdp, s, "Enter", wait=True)
-        if not did:
-            return {"ok": False, "message": "Found no username, password or code field to fill."}
-        time.sleep(2.5)
-        still = _found(cdp, s)
-        if still.get("pw"):
-            try:
-                _eval(cdp, s, CLEAR_PW_JS, timeout=5)   # failed, or another step: don't leave it in the page
-            except Exception:
-                pass
-        try:
-            info = cdp.call("Target.getTargetInfo", {"targetId": tid})["targetInfo"]
-        except Exception:
-            info = {}
-        msg = f"Filled {', '.join(did)} and submitted. The page is now {info.get('url', '?')}" + \
-              (f" ({info.get('title')})" if info.get("title") else "") + "."
-        if still.get("pw"):
-            msg += " It still shows a password field, so the sign-in may have failed: take a snapshot to see why."
-        elif still.get("code") and not code_fn:
-            msg += " It asks for a code this login has no 2FA secret for: ask the user."
-        return {"ok": not still.get("pw"), "message": msg}
-    finally:
-        cdp.close()

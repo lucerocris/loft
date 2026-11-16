@@ -13,7 +13,7 @@ changing the app page or the agent tools.
 | File | What it does |
 |---|---|
 | `loft/mobile.py` | The Android provider: list and boot devices, leases (one agent per device), `Screen` (live JPEG frames + your input), `ui()` (element list), `tap/swipe/type_text/key`, `launch`, `install`, `logs` |
-| `loft/agenttools.py` | What each `loft_phone_*` tool and `loft_sign_in` (on the phone) does, using `mobile.py`. Coordinates are in the agent's screenshot pixels and scaled to the device |
+| `loft/agenttools.py` | What each `loft_phone_*` tool does, using `mobile.py`. Coordinates are in the agent's screenshot pixels and scaled to the device |
 | `loft/agent_mcp.py` | The MCP tool list the agent sees (`PHONE_TOOLS`) |
 | `server.py` | `/api/mobile` (list, boot, stop, free), `/ws/mobile/<serial>` (stream + input), `agent_route` (phone tools) |
 | `index.html` | Loft › Devices pane (`paneDevices`, `mountDevice`, `devInput`) |

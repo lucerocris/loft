@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Loft's tools for an agent: browser checks, the shared Android phone, and signing in with saved logins.
+"""Loft's tools for an agent: browser checks, the shared Android phone, and the login bank.
 
 A stdio MCP server (newline-delimited JSON-RPC), started by Claude Code from the --mcp-config Loft
 passes when it launches the agent. It calls the Loft server on 127.0.0.1 with the agent's own token,
 read from a 0600 file (never on a command line), so it can only touch its own agent's browser.
 
-  agent_mcp.py --key-file <path> --port <loft port> [--tools checks,phone,signin]
+  agent_mcp.py --key-file <path> --port <loft port> [--tools checks,phone,logins]
 
 Tool groups: checks (record and run browser checks), phone (loft_phone_*: the Android device Loft
-shares with the agent, loft/mobile.py), signin (loft_sign_in: Loft fills a saved login into the
-browser or phone itself, so the agent never sees the password, loft/vault.py).
+shares with the agent, loft/mobile.py), logins (loft_logins: which sites the agent's browser is
+signed in to through the login bank, and a refresh after the user signs in again, loft/sites.py).
 """
 import json, sys, urllib.error, urllib.request
 
@@ -77,18 +77,19 @@ PHONE_TOOLS = [
      "a device serial or an emulator name (Loft starts it if needed).",
      "inputSchema": {"type": "object", "properties": {"device": {"type": "string"}}}},
 ]
-SIGNIN_TOOLS = [
-    {"name": "loft_sign_in", "description": "Sign in with one of the logins Loft keeps for this task (by its name). "
-     "Loft fills the username, password and any 2FA code itself and submits: you never see them. In the browser: "
-     "open the sign-in page first, or pass url. On the phone (where: phone): open the app's sign-in screen first.",
-     "inputSchema": {"type": "object", "properties": {"login": {"type": "string"},
-                                                      "where": {"type": "string", "enum": ["browser", "phone"]},
-                                                      "url": {"type": "string"}}, "required": ["login"]}},
+LOGIN_TOOLS = [
+    {"name": "loft_logins", "description": "The login bank: the sites the user signed in to once in Loft, which your "
+     "browser started signed in to (Seller Center, a helpdesk, Google Sheets, ...), each with its address, a note "
+     "(e.g. which account it is) and whether it still looks signed in. Pass login to ask about one. After the user "
+     "signs in again in Loft, pass refresh: true to copy the fresh session into your browser. Loft never gives "
+     "you passwords.",
+     "inputSchema": {"type": "object", "properties": {"login": {"type": "string", "description": "A login's name or host"},
+                                                      "refresh": {"type": "boolean"}}}},
 ]
 CHECK_NAMES = {t["name"] for t in TOOLS}
 for _t in PHONE_TOOLS:
     ROUTES[_t["name"]] = ("phone-" + _t["name"].rsplit("_", 1)[-1], lambda a: dict(a))
-ROUTES["loft_sign_in"] = ("sign-in", lambda a: dict(a))
+ROUTES["loft_logins"] = ("logins", lambda a: dict(a))
 
 
 def tools():
@@ -98,8 +99,8 @@ def tools():
         out += TOOLS
     if "phone" in groups:
         out += PHONE_TOOLS
-    if "signin" in groups:
-        out += SIGNIN_TOOLS
+    if "logins" in groups:
+        out += LOGIN_TOOLS
     return out
 
 

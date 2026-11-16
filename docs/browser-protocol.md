@@ -4,10 +4,13 @@ Two kinds of live browser, one wire format:
 
 - **Agent browsers**: one headless Chromium per agent (`loft/browser.py`). The agent drives it
   through the `loft-browser` MCP tools; you watch and drive it over `/ws/browser/<agent id>`.
-- **Sites browser** (Loft › Browser): one signed-in Chrome profile per Loft account
-  (`loft/sites.py`). You sign in to the account's sites there once; every agent started on that
-  account gets a copy of the profile, so it opens those sites already signed in. Streamed over
-  `/ws/sites/<account id>`.
+- **Login bank browser** (Loft › Browser, Loft › Vault › Logins): one signed-in Chrome profile
+  for every Loft account (`loft/sites.py`). You sign in to each site there once; every agent Loft
+  starts gets a copy of the profile, so it opens those sites already signed in. Streamed over
+  `/ws/sites/shared`.
+
+The bank's id is `shared`. Older phones that send a Loft account id in its place
+(`/api/sites/work`, `/ws/sites/work`) get the same bank.
 
 ## Auth
 
@@ -18,7 +21,7 @@ Same as every other route.
 | Desktop page | `X-Cagents-Token: <token>` header; WebSockets pass `?t=<token>` |
 | Paired phone (tailnet listener) | `Authorization: Bearer <device token>` on the HTTP request and on the WebSocket upgrade |
 
-Phone sessions can do everything below except: `POST /api/sites/<account>/window` (it opens a
+Phone sessions can do everything below except: `POST /api/sites/shared/window` (it opens a
 window on the desktop: 404 for phones), the `/api/browser/<agent id>` routes (desktop only:
 local ports, check results), and navigating anywhere but web pages. For phone sessions `nav` and
 `site` only go to `http://`, `https://` or `about:blank`; `file://`, `chrome://`, `about:*`,
@@ -33,20 +36,17 @@ All bodies and replies are JSON. Errors are `{"message": "..."}` with 400 (bad i
 ```json
 {
   "chrome": true,
-  "accounts": [
-    {
-      "account": "work", "label": "Work", "hex": "#5B8DFF",
-      "sites": [
-        {"id": "3f9c01ab", "name": "Helpdesk", "url": "https://help.example.com",
-         "cookies": 7, "signedIn": true}
-      ],
-      "browser": {"running": true, "window": false},
-      "profile": true
-    }
+  "account": "shared", "label": "Login bank", "hex": "#6E737B",
+  "sites": [
+    {"id": "3f9c01ab", "name": "Helpdesk", "url": "https://help.example.com", "note": "work account",
+     "cookies": 7, "signedIn": true}
   ],
+  "browser": {"running": true, "window": false},
+  "profile": true,
+  "accounts": [{"account": "shared", "...": "the same bank entry, for older phones"}],
   "agents": [
     {"id": "1a2b3c4d", "name": "Fix the import", "account": "work", "col": "running",
-     "url": "https://help.example.com/tickets", "live": true, "sitesAccount": "work"}
+     "url": "https://help.example.com/tickets", "live": true, "bank": true}
   ]
 }
 ```
@@ -56,26 +56,27 @@ All bodies and replies are JSON. Errors are `{"message": "..."}` with 400 (bad i
 - `browser.window`: the profile is open in a normal Chrome window on the desktop; the stream
   is unavailable until it is closed.
 - `agents`: agents that have a Loft browser. `live` = it is on a page (not a blank tab).
-  `sitesAccount` = whose sites it started signed in to (null for a plain web-project browser).
+  `bank` = it started signed in to the login bank (false for a plain web-project browser).
 
-### `GET /api/sites/<account>`
+### `GET /api/sites/shared`
 
-One entry of `accounts` above.
+The bank entry above (without `accounts` and `agents`).
 
-### `POST /api/sites/<account>`  `{"name": "Helpdesk", "url": "help.example.com"}`
+### `POST /api/sites/shared`  `{"name": "Helpdesk", "url": "help.example.com", "note"?: "work account"}`
 
-Adds a site. `https://` is added to a bare host; only http/https; no `user@` in the URL. The
-name defaults to the host. Reply: `{"message", "site": {id, name, url}, ...the account entry}`.
+Adds a login. `https://` is added to a bare host; only http/https; no `user@` in the URL; one
+entry per address. The name defaults to the host; `note` says which account it is (shown to
+agents). Reply: `{"message", "site": {id, name, url, note}, ...the bank entry}`.
 
-### `PATCH /api/sites/<account>/<site id>`  `{"name"?: "...", "url"?: "..."}`
+### `PATCH /api/sites/shared/<site id>`  `{"name"?: "...", "url"?: "...", "note"?: "..."}`
 
 Reply `{"message": "Saved", "site": {...}}`.
 
-### `DELETE /api/sites/<account>/<site id>`
+### `DELETE /api/sites/shared/<site id>`
 
 Reply `{"message": "Removed"}`.
 
-### `POST /api/sites/<account>/window`  `{"open": true, "url"?: "https://..."}` (desktop only)
+### `POST /api/sites/shared/window`  `{"open": true, "url"?: "https://..."}` (desktop only)
 
 Closes the headless browser and opens the profile in a normal Chrome window (for sign-ins that
 refuse headless Chrome: captcha, 2FA prompts, "this browser may not be secure"). `{"open": false}`
@@ -83,21 +84,21 @@ closes the window cleanly (cookies saved); the next `/ws/sites` connection start
 
 ### Snapshot additions (`GET /api/state`, SSE `/api/events`)
 
-- `snapshot.sites`: `{account id: number of sites}` (accounts without sites are left out).
+- `snapshot.sites`: `{"shared": number of logins}` (empty when the bank is empty).
 - `card.browser` (agents only, `null` when the agent has no Loft browser):
 
 ```json
 {"mcp": true, "running": false, "url": "https://help.example.com/tickets", "live": true,
- "account": "work", "sites": 2, "checks": {"ok": true, "passed": 2, "total": 2, "attempts": 0, "at": 1731500000}}
+ "bank": true, "sites": 2, "checks": {"ok": true, "passed": 2, "total": 2, "attempts": 0, "at": 1731500000}}
 ```
 
-`live`, `url` come from the browser's newest tab (refreshed every ~3 s). `account`/`sites` only
-appear when the agent's profile was seeded from that account's signed-in sites. Show a
+`live`, `url` come from the browser's newest tab (refreshed every ~3 s). `bank`/`sites` only
+appear when the agent's profile was seeded from the login bank. Show a
 "Browser" chip on the card when `live` is true; one tap opens `/ws/browser/<id>`.
 
 ## WebSockets
 
-`GET /ws/browser/<agent id>` and `GET /ws/sites/<account id>`, standard RFC 6455 upgrade.
+`GET /ws/browser/<agent id>` and `GET /ws/sites/shared`, standard RFC 6455 upgrade.
 
 ### Server → client
 
@@ -110,7 +111,7 @@ appear when the agent's profile was seeded from that account's signed-in sites. 
 |---|---|---|
 | `url` | `url` | the tab navigated, or the stream switched to another tab |
 | `hello` (agent) | `mcp`, `ports` (dev-server ports in its folder), `login` (bool), `recording` (steps or null) | after connecting |
-| `hello` / `sites` (sites) | the account entry from `GET /api/sites/<account>` | after connecting / on `{"type":"sites"}` |
+| `hello` / `sites` (sites) | the bank entry from `GET /api/sites/shared` | after connecting / on `{"type":"sites"}` |
 | `window` (sites) | — | the profile is open in a window on the desktop; the socket then closes |
 | `err` | `text` | page error, console error, failed request (agent browsers mostly) |
 | `toast` | `text`, `err?` | a message to show; `err: true` = something failed |

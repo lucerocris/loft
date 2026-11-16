@@ -1,4 +1,4 @@
-"""Tests for the vault (loft/vault.py): keys and logins, scopes, the keys hook, TOTP, the agent launch
+"""Tests for the vault (loft/vault.py): keys, scopes, the keys hook, the agent launch
 wiring (loft/board.py agent_extras) and the desktop-only routes.
 
 Config, data and cache go to a temp dir and secrets to the file backend (LOFT_VAULT=file): the
@@ -97,53 +97,13 @@ class Keys(Base):
                          "/usr/bin/python3 /x/bin/loft vault hook 0123456789abcdef")
 
 
-class Logins(Base):
-    def test_totp_rfc6238(self):
-        # RFC 6238 test vector (SHA-1): secret "12345678901234567890", T=59 -> 94287082 (8 digits)
-        import base64
-        sec = base64.b32encode(b"12345678901234567890").decode().rstrip("=")
-        self.assertEqual(V.totp(sec, at=59, digits=8), "94287082")
-        self.assertEqual(V.totp(sec, at=1111111109, digits=8), "07081804")
-        self.assertEqual(len(V.totp(sec)), 6)
-
-    def test_clean_totp_accepts_otpauth_and_spaces(self):
-        self.assertEqual(V.clean_totp("jbsw y3dp ehpk 3pxp"), "JBSWY3DPEHPK3PXP")
-        self.assertEqual(V.clean_totp("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&issuer=y"), "JBSWY3DPEHPK3PXP")
-        with self.assertRaises(ValueError):
-            V.clean_totp("not base32 !!")
-
-    def test_add_and_secrets(self):
-        lg = V.add_login("Staging admin", "admin@test.app", "hunter2pass", "staging.app.com/login",
-                         {"kind": "project", "id": "p1"}, "JBSWY3DPEHPK3PXP")
-        self.assertEqual(lg["url"], "https://staging.app.com/login")
-        self.assertTrue(lg["totp"])
-        pw, code = V.login_secret(lg["id"])
-        self.assertEqual(pw, "hunter2pass")
-        self.assertRegex(code, r"^\d{6}$")
-        self.assertNotIn("hunter2pass", json.dumps(V.public()))
-        self.assertEqual([x["id"] for x in V.logins_for("work", "p1")], [lg["id"]])
-        self.assertEqual(V.logins_for("work", "other"), [])
-        with self.assertRaises(ValueError):
-            V.add_login("x", "u", "p", "https://user:pw@host")
-
-    def test_picked_logins_only(self):
-        a = V.add_login("A", "a@x", "pa")
-        b = V.add_login("B", "b@x", "pb")
-        self.assertEqual([x["id"] for x in V.logins_for("personal", None, [b["id"]])], [b["id"]])
-        self.assertEqual(len(V.logins_for("personal", None)), 2)
-        self.assertEqual(V.find_login("a@x", [a, b])["id"], a["id"])
-        self.assertEqual(V.find_login("b", [a, b])["id"], b["id"])
-        self.assertIsNone(V.find_login("c", [a, b]))
-
-    def test_note_names_but_never_passwords(self):
-        lg = V.add_login("Customer", "c1@test.app", "pw-secret-xyz", "https://app.test/login")
+class Note(Base):
+    def test_note_names_keys_but_never_values(self):
         V.add_key("EXPO_TOKEN", "tok-secret")
-        note = V.agent_note([lg], ["EXPO_TOKEN"])
-        self.assertIn("Customer (c1@test.app, app.test)", note)
-        self.assertIn("loft_sign_in", note)
+        note = V.agent_note(["EXPO_TOKEN"])
         self.assertIn("EXPO_TOKEN", note)
-        self.assertNotIn("pw-secret-xyz", note)
         self.assertNotIn("tok-secret", note)
+        self.assertNotIn("logins", V.public())   # web logins live in the login bank (loft/sites.py)
 
 
 class Launch(Base):
@@ -185,24 +145,20 @@ class Launch(Base):
         self.assertIn("loft_phone", self.flag(args, "--append-system-prompt"))
         self.assertTrue(Path(rec["keyfile"]).exists())
 
-    def test_logins_without_chrome_get_signin_tool(self):
-        lg = V.add_login("Admin", "admin@x", "pw-zzz")
-        rec, args = self.extras({"logins": [lg["id"]]}, phone=True)
-        mcp = json.loads(self.flag(args, "--mcp-config"))["mcpServers"]
-        self.assertEqual(mcp["loft"]["args"][-1], "phone,signin")
-        self.assertEqual(rec["logins"], [lg["id"]])
-        self.assertNotIn("pw-zzz", " ".join(args))
-
-    def test_logins_start_a_browser(self):
-        V.add_login("Admin", "admin@x", "pw")
+    def test_login_bank_starts_a_browser_with_the_logins_tool(self):
+        from loft import sites as ST
+        ST.add("Helpdesk", "https://help.example.com")
         with mock.patch.object(BR, "chrome_bin", return_value="/usr/bin/true"):
             rec, args = self.extras(browser_ok=True)
         self.assertTrue(rec.get("port"))
         mcp = json.loads(self.flag(args, "--mcp-config"))["mcpServers"]
         self.assertEqual(set(mcp), {"loft-browser", "loft"})
-        self.assertEqual(mcp["loft"]["args"][-1], "checks,signin")
+        self.assertEqual(mcp["loft"]["args"][-1], "checks,logins")
         self.assertIn("--disallowedTools", args)
+        self.assertIn("help.example.com", self.flag(args, "--append-system-prompt"))
         BR.discard(rec)
+        with mock.patch.object(BR, "chrome_bin", return_value="/usr/bin/true"):
+            self.assertEqual(self.extras({"bank": False}, browser_ok=True), (None, []))
 
     def test_wants_phone_markers(self):
         from loft import mobile as M
@@ -221,7 +177,7 @@ class AgentTools(unittest.TestCase):
         with mock.patch.object(sys, "argv", ["x", "--tools", "phone"]):
             names = {t["name"] for t in AM.tools()}
         self.assertIn("loft_phone_tap", names)
-        self.assertNotIn("loft_sign_in", names)
+        self.assertNotIn("loft_logins", names)
         self.assertNotIn("loft_record_start", names)
         with mock.patch.object(sys, "argv", ["x"]):   # old launches: checks only
             self.assertEqual({t["name"] for t in AM.tools()}, {t["name"] for t in AM.TOOLS})

@@ -1361,28 +1361,26 @@ function openLoginMenu(btn) {
 }
 document.addEventListener("keydown", e => { if (e.target?.id === "burl" && e.key === "Enter") { e.preventDefault(); const v = e.target.value.trim(); if (v) bsend({ type: "nav", url: /^\d+$/.test(v) ? `localhost:${v}` : v }); $("#bimg")?.focus(); } }, true);
 
-/* ---------- Loft › Browser: signed-in sites ---------- */
-// Per account: sites you sign in to once in its own Chrome profile (loft/sites.py), streamed over
-// /ws/sites/<account> like an agent's browser. Every agent started on the account gets a copy, signed in.
-let SW = { acc: store.get("loft.sitesAcct") || "", data: null, adding: false, edit: false };
+/* ---------- Loft › Browser: the login bank's signed-in browser ---------- */
+// One list of logins and one Chrome profile for every account (loft/sites.py), streamed over
+// /ws/sites/shared like an agent's browser. You sign in to each site once; every agent starts with a copy.
+const BANK = "shared";
+let SW = { data: null, adding: false, edit: false, open: null };
 const GLOBE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`;
 const hostOf = u => { try { return new URL(u).hostname; } catch { return ""; } };
 function brChip(c) {   // an agent's browser is on a page: one click opens it
   const b = c.browser; if (c.kind !== "agent" || !b?.live) return "";
-  const sa = b.account && accById(b.account);
-  return `<button class="bchip" data-agentbr="${esc(c.id)}" title="Open its browser · ${esc(b.url || "")}${sa ? ` · signed in to ${esc(sa.label)}'s sites` : ""}"><span class="dot"></span>${GLOBE}</button>`;
+  return `<button class="bchip" data-agentbr="${esc(c.id)}" title="Open its browser · ${esc(b.url || "")}${b.bank ? " · signed in through the login bank" : ""}"><span class="dot"></span>${GLOBE}</button>`;
 }
 function brAccBadge(c) {
-  const b = c.browser; if (c.kind !== "agent" || !b?.account) return "";
-  const a = accById(b.account); if (!a) return "";
-  return `<span class="sep">·</span><span class="bacc" title="Its browser started signed in to these sites: Loft › Browser › ${esc(a.label)}">${GLOBE.replace("<svg", '<svg width="12" height="12"')}signed in as ${esc(a.label)}</span>`;
+  const b = c.browser; if (c.kind !== "agent" || !b?.bank) return "";
+  return `<span class="sep">·</span><span class="bacc" title="Its browser started signed in to the login bank's ${b.sites || ""} sites (Loft › Vault › Logins)">${GLOBE.replace("<svg", '<svg width="12" height="12"')}signed in</span>`;
 }
-function sitesAcc() { const a = S.accounts || []; return (a.find(x => x.id === SW.acc) || a.find(x => x.id === S.defaultAccount) || a[0])?.id || ""; }
+function sitesAcc() { return BANK; }
 function paneSites(p) {
   const acc = sitesAcc();
   p.innerHTML = `<div class="head shead"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
       <div class="ti"><div class="title" style="border:0">Browser</div><div class="meta" id="smeta"></div></div>
-      ${multiAcc() ? `<div class="seg" role="group" aria-label="Account">${S.accounts.map(a => `<button data-sacc="${esc(a.id)}" aria-pressed="${a.id === acc}" title="${esc(accTitle(a))}">${dotH(a)}${esc(a.label)}</button>`).join("")}</div>` : ""}
       <button class="btn quiet" data-sw="window" title="Open this browser in a normal Chrome window on this computer, for sign-ins that refuse the one in Loft"><i data-lucide="app-window" class="ic"></i>Open in a window</button></div>
     <div class="stabs" id="stabs"></div>
     <div class="bbar">
@@ -1398,9 +1396,8 @@ function paneSites(p) {
 function mountSites(acc, fresh) {
   const img = $("#bimg"); if (!img) return; brInput(img);
   const id = "sites:" + acc;
-  if (!fresh && BR.id === id && BR.ws && BR.ws.readyState <= 1) { if (BR.blob) { img.src = BR.blob; $("#bcover").hidden = true; } return sitesRender(); }
-  disconnectBrowser(); BR.id = id; BR.url = ""; SW.acc = acc;
-  if (!acc) { $("#bcover").innerHTML = `<div>Set up an account first</div>`; return; }
+  if (!fresh && BR.id === id && BR.ws && BR.ws.readyState <= 1) { if (BR.blob) { img.src = BR.blob; $("#bcover").hidden = true; } if (SW.open && BR.ws.readyState === 1) { bsend({ type: "site", id: SW.open }); SW.open = null; } return sitesRender(); }
+  disconnectBrowser(); BR.id = id; BR.url = "";
   const sock = new WebSocket(`ws://${location.host}/ws/sites/${encodeURIComponent(acc)}?t=${TOKEN}`); sock.binaryType = "blob"; BR.ws = sock;
   sock.onmessage = e => { if (sock !== BR.ws) return; if (typeof e.data === "string") return sitesEvent(JSON.parse(e.data)); brFrame(e.data); };
   sock.onclose = () => { if (sock !== BR.ws) return; BR.ws = null; const cv = $("#bcover"); if (!cv) return; cv.hidden = false;
@@ -1411,8 +1408,9 @@ const windowCover = () => `<div><i data-lucide="app-window" class="ic"></i>Open 
 function sitesEvent(m) {
   if (m.type === "hello" || m.type === "sites") {
     SW.data = m; sitesRender();
-    if (m.type === "hello" && !m.browser?.window && (!BR.url || BR.url === "about:blank") && m.sites?.length) bsend({ type: "site", id: m.sites[0].id });
-    else if (m.type === "hello" && !m.sites?.length) { SW.adding = true; sitesRender(); const cv = $("#bcover"); if (cv && !BR.blob) cv.innerHTML = `<div>Add the sites your agents use: a spreadsheet, a helpdesk, a dashboard.<p class="hint">Sign in to each one here once. Every agent you start on this account opens them already signed in.</p></div>`; }
+    if (m.type === "hello" && !m.browser?.window && SW.open && m.sites?.some(s => s.id === SW.open)) { bsend({ type: "site", id: SW.open }); SW.open = null; }
+    else if (m.type === "hello" && !m.browser?.window && (!BR.url || BR.url === "about:blank") && m.sites?.length) bsend({ type: "site", id: (m.sites.find(s => !s.signedIn) || m.sites[0]).id });
+    else if (m.type === "hello" && !m.sites?.length) { SW.adding = true; sitesRender(); const cv = $("#bcover"); if (cv && !BR.blob) cv.innerHTML = `<div>Add the sites your agents use: Seller Center, a helpdesk, Google Sheets.<p class="hint">Sign in to each one here once. Every agent Loft starts, on any account, opens them already signed in.</p></div>`; }
     return;
   }
   if (m.type === "window") { SW.data = { ...(SW.data || {}), browser: { running: true, window: true } }; const cv = $("#bcover"); if (cv) { cv.hidden = false; cv.innerHTML = windowCover(); icons(); } return sitesRender(); }
@@ -1422,41 +1420,40 @@ function sitesEvent(m) {
 function sitesTabs() {
   const el = $("#stabs"); if (!el) return; const D = SW.data, list = D?.sites || [], h = hostOf(BR.url);
   el.innerHTML = list.map(s => `<button class="stab" data-site="${esc(s.id)}" aria-pressed="${!!h && hostOf(s.url) === h}" title="${esc(s.url)} · ${s.signedIn ? "has a saved session" : "not signed in yet"}"><span class="dot ${s.signedIn ? "on" : "off"}"></span><span class="n">${esc(s.name)}</span></button>`).join("")
-    + `<button class="stab add" data-sw="add"><i data-lucide="plus" class="ic"></i>Add site</button>`
-    + (list.length ? `<button class="ibtn" data-sw="edit" aria-pressed="${SW.edit}" title="Edit sites" aria-label="Edit sites"><i data-lucide="pencil" class="ic"></i></button>` : "");
+    + `<button class="stab add" data-sw="add"><i data-lucide="plus" class="ic"></i>Add login</button>`
+    + (list.length ? `<button class="ibtn" data-sw="edit" aria-pressed="${SW.edit}" title="Edit logins" aria-label="Edit logins"><i data-lucide="pencil" class="ic"></i></button>` : "");
   icons();
 }
 function sitesRender() {
-  const acc = sitesAcc(), a = accById(acc), D = SW.data && SW.data.account === acc ? SW.data : null, list = D?.sites || [];
-  const meta = $("#smeta"); if (meta && a) { const on = list.filter(s => s.signedIn).length;
-    meta.innerHTML = `${dotH(a)}<span>${esc(a.label)}</span><span class="sep">·</span><span>${list.length ? `${list.length} site${list.length > 1 ? "s" : ""}, ${on} signed in` : "no sites yet"}</span><span class="sep">·</span><span class="st-muted">new agents on ${esc(a.label)} start signed in to these</span>${D?.browser?.window ? `<span class="sep">·</span><span class="st-needs">open in a window</span>` : ""}`; }
+  const D = SW.data, list = D?.sites || [];
+  const meta = $("#smeta"); if (meta) { const on = list.filter(s => s.signedIn).length;
+    meta.innerHTML = `<span>Login bank</span><span class="sep">·</span><span>${list.length ? `${list.length} login${list.length > 1 ? "s" : ""}, ${on} signed in` : "no logins yet"}</span><span class="sep">·</span><span class="st-muted">every new agent starts signed in to these</span>${D?.browser?.window ? `<span class="sep">·</span><span class="st-needs">open in a window</span>` : ""}`; }
   sitesTabs();
   const el = $("#sside"); if (!el) return;
   let h = "";
-  if (SW.adding) h += `<div class="row"><span class="label">Add a site</span><span class="grow hint" style="margin:0">Its address and a short name. You sign in on the page above.</span></div>
-    <div class="sform"><input id="sname" placeholder="Name, e.g. Helpdesk" aria-label="Site name"><input id="surl" class="u" placeholder="https://app.example.com" aria-label="Site address" spellcheck="false">
+  if (SW.adding) h += `<div class="row"><span class="label">Add a login</span><span class="grow hint" style="margin:0">Its address, a short name and which account it is. You sign in on the page above.</span></div>
+    <div class="sform"><input id="sname" placeholder="Name, e.g. Zoho Desk" aria-label="Login name"><input id="surl" class="u" placeholder="https://app.example.com" aria-label="Site address" spellcheck="false"><input id="snote" placeholder="Which account (optional)" aria-label="Which account">
       <button class="btn primary" data-sw="addgo">Add</button>${/^https?:/.test(BR.url) ? `<button class="btn quiet" data-sw="addcur" title="Fill in the page that's open">Use this page</button>` : ""}<button class="btn quiet" data-sw="addx">Cancel</button></div>`;
-  if (SW.edit && list.length) h += `<div class="row"><span class="label">Sites</span></div>` + list.map(s => `<div class="sform"><input data-sfield="name" value="${esc(s.name)}" aria-label="Name"><input data-sfield="url" class="u" value="${esc(s.url)}" aria-label="Address" spellcheck="false">
+  if (SW.edit && list.length) h += `<div class="row"><span class="label">Logins</span></div>` + list.map(s => `<div class="sform"><input data-sfield="name" value="${esc(s.name)}" aria-label="Name"><input data-sfield="url" class="u" value="${esc(s.url)}" aria-label="Address" spellcheck="false"><input data-sfield="note" value="${esc(s.note || "")}" placeholder="Which account" aria-label="Which account">
       <button class="btn secondary" data-ssave="${esc(s.id)}">Save</button><button class="btn quiet danger" data-sdel="${esc(s.id)}">Remove</button></div>`).join("");
   h += `<div class="row"><span class="label">Agent browsers</span><span class="grow hint" style="margin:0">Open one to watch or take over</span></div><div id="sagents"></div>`;
   el.innerHTML = h; icons(); sitesAgents();
 }
 function sitesAgents() {
   const el = $("#sagents"); if (!el) return;
-  const list = S.cards.filter(c => c.kind === "agent" && c.browser && (c.browser.live || c.browser.account || c.browser.mcp) && c.col !== "done")
+  const list = S.cards.filter(c => c.kind === "agent" && c.browser && (c.browser.live || c.browser.bank || c.browser.mcp) && c.col !== "done")
     .sort((x, y) => (!!y.browser.live - !!x.browser.live) || x.name.localeCompare(y.name));
-  const h = list.length ? list.map(c => { const s = statusOf(c), sa = c.browser.account && accById(c.browser.account);
-    return `<button class="sagent" data-agentbr="${esc(c.id)}"><span class="sd ${s === "running" ? "acc live" : s}" style="width:8px;height:8px;border-radius:50%;flex:none;--ac:${accOf(c).hex}"></span><span class="grow">${esc(c.name)}</span>${sa ? `<span class="st-muted">${esc(sa.label)}'s sites</span>` : ""}<span class="u">${c.browser.live ? esc(c.browser.url.replace(/^https?:\/\//, "")) : "blank"}</span></button>`; }).join("")
-    : `<div class="hint" style="margin:0">None running. Agents get a browser when their folder is a web project or their account has sites.</div>`;
+  const h = list.length ? list.map(c => { const s = statusOf(c);
+    return `<button class="sagent" data-agentbr="${esc(c.id)}"><span class="sd ${s === "running" ? "acc live" : s}" style="width:8px;height:8px;border-radius:50%;flex:none;--ac:${accOf(c).hex}"></span><span class="grow">${esc(c.name)}</span>${c.browser.bank ? `<span class="st-muted">signed in</span>` : ""}<span class="u">${c.browser.live ? esc(c.browser.url.replace(/^https?:\/\//, "")) : "blank"}</span></button>`; }).join("")
+    : `<div class="hint" style="margin:0">None running. Agents get a browser when their folder is a web project or the login bank has logins.</div>`;
   if (el.dataset.h !== h) { el.dataset.h = h; el.innerHTML = h; }
 }
 async function sitesClick(t) {
   const acc = sitesAcc(), base = `/api/sites/${encodeURIComponent(acc)}`;
   const refresh = () => bsend({ type: "sites" });
-  if (t.dataset.sacc) { SW.acc = t.dataset.sacc; store.set("loft.sitesAcct", SW.acc); SW.adding = SW.edit = false; SW.data = null; $("#pane").dataset.key = ""; return renderPane(); }
   if (t.dataset.site) { if (SW.data?.browser?.window) return toast("Close the window first.", true); bsend({ type: "site", id: t.dataset.site }); return $("#bimg")?.focus(); }
   if (t.dataset.ssave) { const row = t.closest(".sform"), f = k => row.querySelector(`[data-sfield="${k}"]`).value;
-    try { toast((await apiM("PATCH", `${base}/${t.dataset.ssave}`, { name: f("name"), url: f("url") })).message); refresh(); } catch (e) { toast(e.message, true); } return; }
+    try { toast((await apiM("PATCH", `${base}/${t.dataset.ssave}`, { name: f("name"), url: f("url"), note: f("note") })).message); refresh(); } catch (e) { toast(e.message, true); } return; }
   if (t.dataset.sdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.textContent = "Click to confirm"; return; }
     try { toast((await apiM("DELETE", `${base}/${t.dataset.sdel}`)).message); refresh(); } catch (e) { toast(e.message, true); } return; }
   const a = t.dataset.sw;
@@ -1464,8 +1461,8 @@ async function sitesClick(t) {
   if (a === "addx") { SW.adding = false; return sitesRender(); }
   if (a === "edit") { SW.edit = !SW.edit; return sitesRender(); }
   if (a === "addcur") { $("#surl").value = BR.url; if (!$("#sname").value) $("#sname").value = hostOf(BR.url).replace(/^www\./, ""); return; }
-  if (a === "addgo") { const url = $("#surl")?.value.trim(), name = $("#sname")?.value.trim(); if (!url) { toast("Give the site's address.", true); return $("#surl")?.focus(); }
-    try { const r = await api(base, { name, url }); toast(r.message); SW.adding = false; SW.data = { ...SW.data, ...r }; sitesRender(); bsend({ type: "site", id: r.site.id }); setTimeout(refresh, 1500); } catch (e) { toast(e.message, true); } return; }
+  if (a === "addgo") { const url = $("#surl")?.value.trim(), name = $("#sname")?.value.trim(), note = $("#snote")?.value.trim() || ""; if (!url) { toast("Give the site's address.", true); return $("#surl")?.focus(); }
+    try { const r = await api(base, { name, url, note }); toast(r.message); SW.adding = false; SW.data = { ...SW.data, ...r }; sitesRender(); bsend({ type: "site", id: r.site.id }); setTimeout(refresh, 1500); } catch (e) { toast(e.message, true); } return; }
   if (a === "window") { t.disabled = true; try { toast((await api(`${base}/window`, { open: true, url: /^https?:/.test(BR.url) ? BR.url : "" })).message); SW.data = { ...(SW.data || {}), browser: { running: true, window: true } }; mountSites(acc, true); } catch (e) { toast(e.message, true); } t.disabled = false; return; }
   if (a === "closewin") { t.disabled = true; try { toast((await api(`${base}/window`, { open: false })).message); SW.data = { ...(SW.data || {}), browser: { running: false, window: false } }; const cv = $("#bcover"); if (cv) cv.innerHTML = `<div><i data-lucide="loader" class="ic"></i>Opening the browser…</div>`; mountSites(acc, true); } catch (e) { toast(e.message, true); t.disabled = false; } return; }
   if (a === "reconnect") return mountSites(acc, true);
@@ -1556,11 +1553,15 @@ async function devClick(t) {
   if (a) { dsend({ type: "button", name: a }); $("#dimg")?.focus(); }
 }
 
-/* ---------- Loft › Vault: dev keys and logins ---------- */
-// Values live in the OS keychain (loft/vault.py); the page only gets them on Reveal/Copy. Agents get keys
-// as env vars in their shell and sign in with logins through loft_sign_in, never seeing the passwords.
-let VT = { data: null, tab: store.get("loft.vaultTab") || "keys", adding: false, edit: null };
-async function vaultLoad() { try { VT.data = await api("/api/vault"); } catch (e) { toast(e.message, true); } return VT.data; }
+/* ---------- Loft › Vault: dev keys and the login bank ---------- */
+// Keys: values live in the OS keychain (loft/vault.py); the page only gets them on Reveal/Copy, agents get
+// them as env vars. Logins: the login bank (loft/sites.py), sessions you sign in to once in Loft › Browser;
+// every agent's browser starts with a copy. No passwords anywhere.
+let VT = { data: null, bank: null, tab: store.get("loft.vaultTab") || "logins", adding: false, edit: null };
+async function vaultLoad() {
+  try { const [v, b] = await Promise.all([api("/api/vault"), api(`/api/sites/${BANK}`)]); VT.data = v; VT.bank = b; } catch (e) { toast(e.message, true); }
+  return VT.data;
+}
 function scopeText(s) { s = s || { kind: "global" }; if (s.kind === "project") return "Project " + (projById(s.id)?.name || s.id); if (s.kind === "account") return (accById(s.id)?.label || s.id) + " account"; return "Every agent"; }
 function scopeSelect(id, cur) {
   cur = cur || { kind: "global" }; const v = cur.kind === "global" ? "global" : `${cur.kind}:${cur.id}`;
@@ -1572,95 +1573,125 @@ function scopeSelect(id, cur) {
 function scopeOf(id) { const v = $("#" + id)?.value || "global"; if (v === "global") return { kind: "global" }; const i = v.indexOf(":"); return { kind: v.slice(0, i), id: v.slice(i + 1) }; }
 function paneVault(p) {
   p.innerHTML = `<div class="head shead"><button class="ibtn back" data-back aria-label="Back"><i data-lucide="arrow-left" class="ic"></i></button>
-      <div class="ti"><div class="title" style="border:0">Vault</div><div class="meta" id="vmeta"><span class="st-muted">Dev keys and logins your agents use</span></div></div>
-      <div class="seg" role="group" aria-label="Show"><button data-vtab="keys" aria-pressed="${VT.tab === "keys"}"><i data-lucide="key-round" class="ic"></i>Keys</button><button data-vtab="logins" aria-pressed="${VT.tab === "logins"}"><i data-lucide="lock" class="ic"></i>Logins</button></div></div>
+      <div class="ti"><div class="title" style="border:0">Vault</div><div class="meta" id="vmeta"><span class="st-muted">Logins and dev keys your agents use</span></div></div>
+      <div class="seg" role="group" aria-label="Show"><button data-vtab="logins" aria-pressed="${VT.tab === "logins"}"><i data-lucide="lock" class="ic"></i>Logins</button><button data-vtab="keys" aria-pressed="${VT.tab === "keys"}"><i data-lucide="key-round" class="ic"></i>Keys</button></div></div>
     <div class="vault" id="vbody"><div class="hint">Loading…</div></div>`;
   icons(); vaultLoad().then(vaultRender);
 }
 function vaultRender() {
   const el = $("#vbody"), D = VT.data; if (!el || !D) return;
+  if (VT.tab === "logins") return bankRender(el);
   const m = $("#vmeta"); if (m) m.innerHTML = `<span class="st-muted">Values are kept in ${esc(D.where)}</span>${D.backend === "file" ? `<span class="sep">·</span><span class="st-needs">not encrypted</span>` : ""}`;
-  const keys = VT.tab === "keys", list = keys ? D.keys : D.logins;
-  let h = `<div class="vintro">${keys
-    ? "Agents get these as environment variables in their shell when they start ($STRIPE_SECRET_KEY and so on). A project's key wins over an account's, which wins over one for every agent. Use dev and test keys: an agent can print what it has."
-    : "Agents sign in with these through Loft: it types the username, password and 2FA code into their browser or phone, so they never see them. Pick which logins a task gets in New task; with none picked, an agent gets every login for its project and account."}</div>`;
-  h += VT.adding ? vaultForm(keys, null) : `<div class="row"><button class="btn secondary" data-vadd><i data-lucide="plus" class="ic"></i>${keys ? "Add a key" : "Add a login"}</button></div>`;
+  const keys = true, list = D.keys;
+  let h = `<div class="vintro">Agents get these as environment variables in their shell when they start ($STRIPE_SECRET_KEY and so on). A project's key wins over an account's, which wins over one for every agent. Use dev and test keys: an agent can print what it has.</div>`;
+  h += VT.adding ? vaultForm(keys, null) : `<div class="row"><button class="btn secondary" data-vadd><i data-lucide="plus" class="ic"></i>Add a key</button></div>`;
   h += list.length ? list.map(x => VT.edit === x.id ? vaultForm(keys, x) : `<div class="vrow" data-vid="${esc(x.id)}">
-      <span class="grow"><span class="vn${keys ? " mono" : ""}">${esc(keys ? x.name : x.label)}</span><span class="st-muted">${keys ? "" : esc(x.username) + (x.url ? " · " + esc(hostOf(x.url)) : "") + (x.totp ? " · 2FA" : "") + " · "}${esc(scopeText(x.scope))}${x.note ? " · " + esc(x.note) : ""}</span></span>
+      <span class="grow"><span class="vn mono">${esc(x.name)}</span><span class="st-muted">${esc(scopeText(x.scope))}${x.note ? " · " + esc(x.note) : ""}</span></span>
       <span class="vval mono" id="vv-${esc(x.id)}">••••••••</span>
-      <button class="ibtn" data-vreveal="${esc(x.id)}" title="${keys ? "Show the value" : "Show the password"}" aria-label="Show"><i data-lucide="eye" class="ic"></i></button>
-      <button class="ibtn" data-vcopy="${esc(x.id)}" title="${keys ? "Copy the value" : "Copy the password"}" aria-label="Copy"><i data-lucide="copy" class="ic"></i></button>
+      <button class="ibtn" data-vreveal="${esc(x.id)}" title="Show the value" aria-label="Show"><i data-lucide="eye" class="ic"></i></button>
+      <button class="ibtn" data-vcopy="${esc(x.id)}" title="Copy the value" aria-label="Copy"><i data-lucide="copy" class="ic"></i></button>
       <button class="ibtn" data-vedit="${esc(x.id)}" title="Edit" aria-label="Edit"><i data-lucide="pencil" class="ic"></i></button>
       <button class="ibtn" data-vdel="${esc(x.id)}" title="Remove" aria-label="Remove"><i data-lucide="trash-2" class="ic"></i></button></div>`).join("")
-    : `<div class="hint">${keys ? "No keys yet. Add the API keys and tokens your dev servers and builds need." : "No logins yet. Add test users (admin, a customer, …) for the apps your agents work on."}</div>`;
+    : `<div class="hint">No keys yet. Add the API keys and tokens your dev servers and builds need.</div>`;
   el.innerHTML = h; icons();
   const f = $("#vf1"); if (f && VT.adding) f.focus();
 }
+function bankRender(el) {
+  const B = VT.bank || { sites: [] }, list = B.sites || [], on = list.filter(s => s.signedIn).length;
+  const m = $("#vmeta"); if (m) m.innerHTML = `<span class="st-muted">${list.length ? `${list.length} login${list.length > 1 ? "s" : ""}, ${on} signed in` : "No logins yet"}</span><span class="sep">·</span><span class="st-muted">no passwords stored</span>${B.browser?.window ? `<span class="sep">·</span><span class="st-needs">open in a window</span>` : ""}`;
+  let h = `<div class="vintro">Sign in to each site once, here in Loft. Loft keeps the session, not the password, and every agent it starts, on any account, opens these already signed in and knows they're here. When a session runs out, sign in again and agents pick it up.</div>`;
+  h += VT.adding ? bankForm(null) : `<div class="row"><button class="btn secondary" data-vadd><i data-lucide="plus" class="ic"></i>Add a login</button>${list.length ? `<button class="btn quiet" data-bsignin="">Open the browser</button>` : ""}${B.browser?.window ? `<button class="btn quiet" data-bclosewin>Close the window</button>` : ""}</div>`;
+  h += list.length ? list.map(x => VT.edit === x.id ? bankForm(x) : `<div class="vrow" data-vid="${esc(x.id)}">
+      <span class="dot ${x.signedIn ? "on" : "off"}" title="${x.signedIn ? "Has a saved session" : "Not signed in yet"}" style="width:8px;height:8px;border-radius:50%;flex:none;background:${x.signedIn ? "var(--ok, #2E9E5B)" : "var(--t4, #9AA0A6)"}"></span>
+      <span class="grow"><span class="vn">${esc(x.name)}</span><span class="st-muted">${esc(hostOf(x.url))}${x.note ? " · " + esc(x.note) : ""} · ${x.signedIn ? "signed in" : "not signed in"}</span></span>
+      <button class="btn ${x.signedIn ? "quiet" : "secondary"}" data-bsignin="${esc(x.id)}" title="Open it in Loft's browser to sign in or check">${x.signedIn ? "Open" : "Sign in"}</button>
+      <button class="ibtn" data-bwin="${esc(x.id)}" title="Sign in in a normal Chrome window (for sign-ins that refuse the one in Loft)" aria-label="Open in a window"><i data-lucide="app-window" class="ic"></i></button>
+      <button class="ibtn" data-vedit="${esc(x.id)}" title="Edit" aria-label="Edit"><i data-lucide="pencil" class="ic"></i></button>
+      <button class="ibtn" data-vdel="${esc(x.id)}" title="Remove" aria-label="Remove"><i data-lucide="trash-2" class="ic"></i></button></div>`).join("")
+    : `<div class="hint">No logins yet. Add the sites your agents work in: TikTok Seller Center, Zoho Desk, Google Sheets on your work account…</div>`;
+  el.innerHTML = h; icons();
+  const f = $("#vf1"); if (f && VT.adding) f.focus();
+}
+function bankForm(x) {
+  const ed = !!x;
+  return `<div class="vform" data-vform="${ed ? esc(x.id) : ""}">
+      <input id="vf1" placeholder="Name, e.g. Zoho Desk" value="${ed ? esc(x.name) : ""}" aria-label="Name">
+      <input id="vf4" placeholder="Address, e.g. https://desk.zoho.com" value="${ed ? esc(x.url) : ""}" class="mono" spellcheck="false" aria-label="Address">
+      <input id="vf3" placeholder="Which account (optional), e.g. work Google" value="${ed ? esc(x.note || "") : ""}" aria-label="Which account">
+      <button class="btn primary" data-vsave>${ed ? "Save" : "Add and sign in"}</button><button class="btn quiet" data-vcancel>Cancel</button></div>`;
+}
+async function bankClick(t) {
+  const base = `/api/sites/${BANK}`, again = async () => { VT.bank = await api(base); vaultRender(); };
+  if (t.dataset.bsignin !== undefined) { SW.open = t.dataset.bsignin || null; return go("browser"); }
+  if (t.dataset.bwin) { const x = (VT.bank?.sites || []).find(s => s.id === t.dataset.bwin); t.disabled = true;
+    try { toast((await api(`${base}/window`, { open: true, url: x?.url || "" })).message); await again(); } catch (e) { toast(e.message, true); t.disabled = false; } return; }
+  if (t.hasAttribute("data-bclosewin")) { try { toast((await api(`${base}/window`, { open: false })).message); await again(); } catch (e) { toast(e.message, true); } return; }
+  if (t.dataset.vdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.title = "Click again to remove it"; return; }
+    try { toast((await apiM("DELETE", `${base}/${encodeURIComponent(t.dataset.vdel)}`)).message); await again(); } catch (e) { toast(e.message, true); } return; }
+  if (t.hasAttribute("data-vsave")) {
+    const f = t.closest(".vform"), id = f.dataset.vform, v = k => ($("#" + k)?.value ?? "").trim();
+    const body = { name: v("vf1"), url: v("vf4"), note: v("vf3") };
+    if (!body.url) { toast("Give the site's address.", true); return $("#vf4")?.focus(); }
+    t.disabled = true;
+    try { const r = id ? await apiM("PATCH", `${base}/${encodeURIComponent(id)}`, body) : await api(base, body);
+      toast(r.message); VT.adding = false; VT.edit = null;
+      if (!id && r.site) { SW.open = r.site.id; return go("browser"); }
+      await again(); } catch (e) { toast(e.message, true); t.disabled = false; }
+    return true;
+  }
+}
 function vaultForm(keys, x) {
   const ed = !!x, sid = ed ? "vfs-" + x.id : "vfs";
-  if (keys) return `<div class="vform" data-vform="${ed ? esc(x.id) : ""}">
+  return `<div class="vform" data-vform="${ed ? esc(x.id) : ""}">
       <input id="vf1" class="mono" placeholder="NAME, e.g. STRIPE_SECRET_KEY" value="${ed ? esc(x.name) : ""}" spellcheck="false" autocomplete="off" aria-label="Name">
       <input id="vf2" type="password" class="mono" placeholder="${ed ? "New value (leave empty to keep it)" : "Value"}" autocomplete="new-password" aria-label="Value">
       ${scopeSelect(sid, x?.scope)}<input id="vf3" placeholder="Note (optional)" value="${ed ? esc(x.note || "") : ""}" aria-label="Note">
       <button class="btn primary" data-vsave>${ed ? "Save" : "Add"}</button><button class="btn quiet" data-vcancel>Cancel</button></div>`;
-  return `<div class="vform" data-vform="${ed ? esc(x.id) : ""}">
-      <input id="vf1" placeholder="Name, e.g. Staging admin" value="${ed ? esc(x.label) : ""}" aria-label="Name">
-      <input id="vf4" placeholder="Sign-in page, e.g. https://staging.app.com/login" value="${ed ? esc(x.url || "") : ""}" class="mono" spellcheck="false" aria-label="Sign-in page">
-      <input id="vf5" placeholder="Username or email" value="${ed ? esc(x.username) : ""}" autocomplete="off" spellcheck="false" aria-label="Username">
-      <input id="vf2" type="password" placeholder="${ed ? "New password (leave empty to keep it)" : "Password"}" autocomplete="new-password" aria-label="Password">
-      <input id="vf6" type="password" placeholder="${ed && x.totp ? "2FA setup key saved (paste a new one to replace)" : "2FA setup key (optional)"}" autocomplete="off" class="mono" aria-label="2FA setup key">
-      ${scopeSelect(sid, x?.scope)}<input id="vf3" placeholder="Note (optional)" value="${ed ? esc(x.note || "") : ""}" aria-label="Note">
-      <button class="btn primary" data-vsave>${ed ? "Save" : "Add"}</button><button class="btn quiet" data-vcancel>Cancel</button></div>`;
 }
 async function vaultReveal(id) {
-  const kind = VT.tab === "keys" ? "keys" : "logins";
-  return api(`/api/vault/${kind}/${encodeURIComponent(id)}/reveal`, {});
+  return api(`/api/vault/keys/${encodeURIComponent(id)}/reveal`, {});
 }
 async function vaultClick(t) {
   if (t.dataset.vtab) { VT.tab = t.dataset.vtab; store.set("loft.vaultTab", VT.tab); VT.adding = false; VT.edit = null; document.querySelectorAll("[data-vtab]").forEach(b => b.setAttribute("aria-pressed", b.dataset.vtab === VT.tab)); return vaultRender(); }
   if (t.hasAttribute("data-vadd")) { VT.adding = true; VT.edit = null; return vaultRender(); }
   if (t.hasAttribute("data-vcancel")) { VT.adding = false; VT.edit = null; return vaultRender(); }
   if (t.dataset.vedit) { VT.edit = t.dataset.vedit; VT.adding = false; return vaultRender(); }
+  if (VT.tab === "logins") return bankClick(t);
   if (t.dataset.vreveal) { const el = $("#vv-" + t.dataset.vreveal); if (!el) return;
     if (el.dataset.shown) { el.textContent = "••••••••"; delete el.dataset.shown; return; }
     try { const r = await vaultReveal(t.dataset.vreveal); el.textContent = r.value + (r.code ? `  ·  2FA ${r.code}` : ""); el.dataset.shown = "1"; setTimeout(() => { if (el.dataset.shown) { el.textContent = "••••••••"; delete el.dataset.shown; } }, 20000); } catch (e) { toast(e.message, true); } return; }
   if (t.dataset.vcopy) { try { const r = await vaultReveal(t.dataset.vcopy); await navigator.clipboard.writeText(r.value); toast("Copied"); } catch (e) { toast(e.message || "Couldn't copy", true); } return; }
   if (t.dataset.vdel) { if (!t.classList.contains("armed")) { t.classList.add("armed"); t.title = "Click again to remove it"; return; }
-    try { const kind = VT.tab === "keys" ? "keys" : "logins"; VT.data = await apiM("DELETE", `/api/vault/${kind}/${encodeURIComponent(t.dataset.vdel)}`); toast(VT.data.message); vaultRender(); } catch (e) { toast(e.message, true); } return; }
+    try { VT.data = await apiM("DELETE", `/api/vault/keys/${encodeURIComponent(t.dataset.vdel)}`); toast(VT.data.message); vaultRender(); } catch (e) { toast(e.message, true); } return; }
   if (t.hasAttribute("data-vsave")) {
-    const f = t.closest(".vform"), id = f.dataset.vform, keys = VT.tab === "keys", v = k => ($("#" + k)?.value ?? "");
+    const f = t.closest(".vform"), id = f.dataset.vform, v = k => ($("#" + k)?.value ?? "");
     const scope = scopeOf(id ? "vfs-" + id : "vfs");
-    const body = keys ? { name: v("vf1").trim(), value: v("vf2"), scope, note: v("vf3").trim() }
-      : { label: v("vf1").trim(), url: v("vf4").trim(), username: v("vf5").trim(), password: v("vf2"), totp: v("vf6").trim(), scope, note: v("vf3").trim() };
-    if (id) { if (!body.value) delete body.value; if (!body.password) delete body.password; if (!body.totp) delete body.totp; }
+    const body = { name: v("vf1").trim(), value: v("vf2"), scope, note: v("vf3").trim() };
+    if (id && !body.value) delete body.value;
     t.disabled = true;
-    try { const kind = keys ? "keys" : "logins"; const r = id ? await apiM("PATCH", `/api/vault/${kind}/${encodeURIComponent(id)}`, body) : await api(`/api/vault/${kind}`, body);
+    try { const r = id ? await apiM("PATCH", `/api/vault/keys/${encodeURIComponent(id)}`, body) : await api(`/api/vault/keys`, body);
       toast(r.message); VT.data = r; VT.adding = false; VT.edit = null; vaultRender(); } catch (e) { toast(e.message, true); t.disabled = false; }
     return;
   }
 }
 document.addEventListener("keydown", e => { if (e.target?.closest?.(".vform") && e.key === "Enter") { e.preventDefault(); e.target.closest(".vform").querySelector("[data-vsave]")?.click(); } if (e.target?.closest?.(".vform") && e.key === "Escape") { e.stopPropagation(); VT.adding = false; VT.edit = null; vaultRender(); } }, true);
 
-/* New task: which logins it may sign in with, and whether it gets an Android phone */
-let NL = { picked: null, phone: null };
+/* New task: whether it starts signed in to the login bank, and whether it gets an Android phone */
+let NL = { bank: true, phone: null };
 function newExtras() {
-  const all = VT.data?.logins || [], pj = newProj, acc = newAcct;
-  const fits = all.filter(x => { const s = x.scope || { kind: "global" }; return s.kind === "global" || (s.kind === "project" && s.id === pj) || (s.kind === "account" && (acc === "auto" || s.id === acc)); });
-  const chips = fits.map(x => `<button data-nlogin="${esc(x.id)}" aria-pressed="${NL.picked ? NL.picked.includes(x.id) : true}" title="${esc(x.username)}">${esc(x.label)}</button>`).join("");
-  return `${fits.length ? `<span class="label">Logins</span><div class="dchips" role="group" aria-label="Logins it may sign in with" id="nlogins">${chips}</div>` : ""}
+  const n = (VT.bank?.sites || []).length;
+  return `${n ? `<span class="label">Logins</span><div class="seg" role="group" aria-label="Login bank"><button data-nlogin="on" aria-pressed="${NL.bank}" title="Its browser starts signed in to the login bank (Loft › Vault › Logins)">Signed in (${n})</button><button data-nlogin="off" aria-pressed="${!NL.bank}">None</button></div>` : ""}
     <span class="label">Phone</span><div class="seg" role="group" aria-label="Android phone"><button data-nphone="auto" aria-pressed="${NL.phone === null}" title="Mobile app folders (Flutter, React Native, Android) get one">Auto</button><button data-nphone="on" aria-pressed="${NL.phone === true}">Android phone</button><button data-nphone="off" aria-pressed="${NL.phone === false}">None</button></div>`;
 }
 function newExtrasPaint() { const el = $("#nextras"); if (el) { el.innerHTML = newExtras(); icons(); } }
 function newExtrasBody() {
-  const out = {}; const all = (VT.data?.logins || []).map(x => x.id), chips = [...document.querySelectorAll("[data-nlogin]")];
-  if (NL.picked && chips.length) out.logins = NL.picked.filter(id => all.includes(id));
+  const out = {};
+  if (!NL.bank && document.querySelector("[data-nlogin]")) out.bank = false;
   if (NL.phone !== null) out.phone = NL.phone;
   return out;
 }
 function newExtrasClick(t) {
-  if (t.dataset.nlogin) { const ids = [...document.querySelectorAll("[data-nlogin]")].map(b => b.dataset.nlogin);
-    const cur = NL.picked || ids.slice(); const i = cur.indexOf(t.dataset.nlogin); if (i >= 0) cur.splice(i, 1); else cur.push(t.dataset.nlogin);
-    NL.picked = cur; return newExtrasPaint(); }
+  if (t.dataset.nlogin) { NL.bank = t.dataset.nlogin === "on"; return newExtrasPaint(); }
   if (t.dataset.nphone) { NL.phone = { auto: null, on: true, off: false }[t.dataset.nphone]; return newExtrasPaint(); }
 }
 
@@ -1718,7 +1749,7 @@ async function submitNew(start) {
   const b = $(start ? "#nStart" : "#nTodo"); b.disabled = true;
   try {
     const r = await api("/api/cards", { prompt, cwd, account: newAcct, start, title: "", ...(newProj ? { project: newProj } : {}), ...newExtrasBody() });
-    NL = { picked: null, phone: null };
+    NL = { bank: true, phone: null };
     if (!newProj && newAcct !== "auto") store.set("loft.dir." + newAcct, cwd); drafts.new = ""; drafts.dir = undefined; toast(r.message);
     const m = /started ([0-9a-f]{8})/.exec(r.message || ""); if (m) return waitOpen(m[1]);
     setSel(null);
@@ -1749,7 +1780,7 @@ function openSettings(btn) {
   m.innerHTML = `<button data-go="accounts"><i data-lucide="users" class="ic"></i>Accounts<kbd style="margin-left:auto">,</kbd></button>
     <button data-go="projects"><i data-lucide="layers" class="ic"></i>Projects<kbd style="margin-left:auto">p</kbd></button>
     <button data-go="organize"><i data-lucide="layout-list" class="ic"></i>How to organize…</button>
-    <button data-go="vault"><i data-lucide="key-round" class="ic"></i>Vault: keys and logins</button>
+    <button data-go="vault"><i data-lucide="key-round" class="ic"></i>Vault: logins and keys</button>
     <button data-go="devices"><i data-lucide="tablet-smartphone" class="ic"></i>Devices</button>`;
   const r = btn.getBoundingClientRect(); m.style.top = r.bottom + 6 + "px"; m.style.right = Math.max(8, innerWidth - r.right) + "px"; m.style.left = "auto"; m.className = "menu"; m.hidden = false; m.dataset.for = "settings"; icons();
 }
@@ -2287,9 +2318,9 @@ document.addEventListener("click", async e => {
   if (t.hasAttribute("data-vault")) return go("vault");
   if (t.dataset.agentphone) { e.stopPropagation(); DV.serial = t.dataset.agentphone; disconnectDevice(); return go("devices"); }
   if (t.dataset.dpick || t.dataset.dboot || t.dataset.dstop || t.dataset.dfree || t.dataset.dv) return devClick(t);
-  if (t.dataset.vtab || t.dataset.vreveal || t.dataset.vcopy || t.dataset.vedit || t.dataset.vdel || t.hasAttribute("data-vadd") || t.hasAttribute("data-vcancel") || t.hasAttribute("data-vsave")) return vaultClick(t);
+  if (t.dataset.vtab || t.dataset.vreveal || t.dataset.vcopy || t.dataset.vedit || t.dataset.vdel || t.hasAttribute("data-vadd") || t.hasAttribute("data-vcancel") || t.hasAttribute("data-vsave") || t.dataset.bsignin !== undefined || t.dataset.bwin || t.hasAttribute("data-bclosewin")) return vaultClick(t);
   if (t.dataset.nlogin || t.dataset.nphone) return newExtrasClick(t);
-  if (t.dataset.sw || t.dataset.sacc || t.dataset.site || t.dataset.ssave || t.dataset.sdel) return sitesClick(t);
+  if (t.dataset.sw || t.dataset.site || t.dataset.ssave || t.dataset.sdel) return sitesClick(t);
   if (t.dataset.archdone) { e.stopPropagation(); return archiveAll(t); }
   if (t.hasAttribute("data-assist")) return setSel(sel === "assistant" ? null : "assistant");
   if (t.hasAttribute("data-assend")) return asSend();

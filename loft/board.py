@@ -680,37 +680,35 @@ def wants_phone(cwd, todo=None):
 
 
 def agent_extras(todo, cwd, acc):
-    """What Loft adds to an agent's launch: its browser, phone, logins and keys. (record or None, claude args).
+    """What Loft adds to an agent's launch: its browser, phone, the login bank and keys. (record or None, claude args).
 
     One agent record (loft/browser.py, <cache>/browsers/<jid>.json) carries the token its Loft tools
-    use; the browser itself is only started for web folders, accounts with signed-in sites, and tasks
-    with logins (they sign in in the browser, or on the phone for mobile apps)."""
+    use; the browser itself is only started for web folders and while the login bank (loft/sites.py)
+    has logins: then every agent, on any account, starts signed in to them, unless its task turned
+    the bank off (todo["bank"] = False)."""
     from . import vault as V
     try:
         project = todo.get("project") or P.project_of("", cwd, P.load())
     except Exception:
         project = todo.get("project")
     try:
-        logins = V.logins_for(acc["id"], project, todo.get("logins") or None)
         key_names = V.key_names_for(acc["id"], project)
     except Exception:
-        logins, key_names = [], []
+        key_names = []
     phone = wants_phone(cwd, todo)
     try:
-        br = BR.prepare(cwd, acc["id"], tools=bool(phone or logins or key_names),
-                        browser=bool(logins and not phone))
+        br = BR.prepare(cwd, acc["id"], tools=bool(phone or key_names), bank=todo.get("bank") is not False)
     except Exception:
         br = None
     if not br:
         return None, []
     br["phone"] = phone
-    br["logins"] = [x["id"] for x in logins]
     br["project"] = project
     notes = [BR.agent_note(br)] if br.get("port") else []
     if phone:
         notes.append(PHONE_NOTE)
-    if logins or key_names:
-        notes.append(V.agent_note(logins, key_names))
+    if key_names:
+        notes.append(V.agent_note(key_names))
     extra = ["--mcp-config", BR.mcp_config(br)]
     if br.get("port"):
         extra += ["--disallowedTools", BR.DENY_TOOLS]
@@ -756,7 +754,7 @@ def launch_todo(todo):
     return jid, f"started {jid} on {acc['label']}"
 
 
-def create_task(prompt, cwd="", account=None, project=None, title="", start=False, logins=None, phone=None):
+def create_task(prompt, cwd="", account=None, project=None, title="", start=False, bank=None, phone=None):
     """A new task from the app, the phone or `loft new`: saved to Todo, or started now.
     Returns (status, message, jid or None, todo). A title typed here is kept as is; without
     one the card gets a title from the prompt until the generated one lands (loft/titles.py)."""
@@ -782,8 +780,8 @@ def create_task(prompt, cwd="", account=None, project=None, title="", start=Fals
             "created": now_utc().isoformat()}
     if proj:
         todo["project"] = proj["id"]
-    if logins:
-        todo["logins"] = [str(x) for x in logins if isinstance(x, str)][:20]
+    if bank is False:   # this one starts without the login bank's sign-ins
+        todo["bank"] = False
     if phone is not None:
         todo["phone"] = bool(phone)
     if start:
