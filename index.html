@@ -2433,9 +2433,11 @@ document.addEventListener("keydown", e => {
     if (sel === "setup") return;
     if (sel === "new" || sel === "accounts" || sel === "projects" || sel === "browser" || sel === "assistant" || (view === "board" && sel)) { if (sel === "accounts") { loginFor = null; loginEnded = false; adding = false; } const id = sel; setSel(null); if (view === "board" && id !== "new") focusCard(id); } return; }
   if (ae?.matches?.("#cols .bcard") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); return setSel(ae.dataset.id); }
-  // V speaks — also while the reply box is empty and focused
-  if ((e.key === "v" || e.key === "V") && !e.ctrlKey && !e.metaKey && !e.altKey && (!typing || (ae.id === "reply" && !ae.value) || (ae.id === "nprompt" && !ae.value) || (ae.id === "atext" && !ae.value))) { const tg = voiceTarget(); if (tg) { e.preventDefault(); return toggleVoice(tg); } }
-  if (typing && !((ae.id === "reply" || ae.id === "nprompt") && !ae.value)) return;
+  // V speaks, outside text boxes only: in a box it's the first letter of "Verify ..." (the mic button works there)
+  if ((e.key === "v" || e.key === "V") && !e.ctrlKey && !e.metaKey && !e.altKey && !typing) { const tg = voiceTarget(); if (tg) { e.preventDefault(); return toggleVoice(tg); } }
+  // In a text box, letters are typing, never shortcuts (a task starting with "w" opened the browser).
+  // An empty reply or new-task box still lets the arrow keys move between cards.
+  if (typing && !((ae.id === "reply" || ae.id === "nprompt") && !ae.value && e.key.startsWith("Arrow"))) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "n" && sel !== "setup") { e.preventDefault(); setSel("new"); }
   else if (e.key === "," && sel !== "setup") { e.preventDefault(); AC = null; setSel("accounts"); }
