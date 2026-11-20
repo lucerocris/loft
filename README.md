@@ -127,6 +127,19 @@ Signing (TODO): signed and notarized macOS builds need an Apple Developer accoun
 secrets: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
 `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
 
+### Memory guard (Linux)
+
+The desktop app runs as a systemd user unit (`app-Loft@….service`). Loft starts every
+`claude` command and agent browser in its own transient scope (`systemd-run --user --scope`),
+so the Claude daemon, every agent, and every build or test an agent runs stay out of Loft's
+unit. Each scope is capped (`MemoryHigh=70%`, `MemoryMax=80%` of RAM, `MemorySwapMax=2G`) with
+`OOMPolicy=continue`. A runaway agent process is killed inside its scope, and Loft and the
+other agents keep running. Loft's own unit (window, server, voice) is capped at 4G. Override
+with `LOFT_AGENTS_MEMORY_HIGH`, `LOFT_AGENTS_MEMORY_MAX`, `LOFT_AGENTS_SWAP_MAX` and
+`LOFT_MEMORY_MAX` (systemd syntax: `12G`, `75%`, `infinity`), or turn it off with
+`LOFT_SCOPE=0`. The server log prints `memory guard: …` at start. Agents now outlive the
+app: quitting Loft no longer stops them (`claude daemon stop --any` does).
+
 ## Using it
 
 ```sh

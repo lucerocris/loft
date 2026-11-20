@@ -22,6 +22,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
 from . import paths
+from . import scope as S
 
 MCP_PACKAGE = "@playwright/mcp@0.0.84"
 AGENT_NOTE = ("Loft shares a browser with you: the `loft-browser` MCP tools drive a Chromium the user watches live "
@@ -188,9 +189,9 @@ def _spawn(port, profile):
     exe = chrome_bin()
     if not exe:
         raise RuntimeError("No Chrome, Chromium, Edge or Brave found (set LOFT_CHROME).")
-    p = subprocess.Popen([exe, f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "--headless=new",
-                          "--no-first-run", "--no-default-browser-check", "--mute-audio", "--window-size=1280,800",
-                          "about:blank"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    p = subprocess.Popen(S.wrap([exe, f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "--headless=new",
+                                 "--no-first-run", "--no-default-browser-check", "--mute-audio", "--window-size=1280,800",
+                                 "about:blank"]), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
     _PROCS[p.pid] = p
     for _ in range(100):
