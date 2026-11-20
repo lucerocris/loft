@@ -53,7 +53,7 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 
 
 sys.path.insert(0, str(HERE))
-from loft import accounts as A, agenttools as AT, attachments as ATT, assistant as AS, board as B, browser as BR, core as C, mobile as M, paths, projects as P, prompts as PR, sites as ST, titles as TI, transcript as TR, usage as U, vault as V, webapi  # noqa: E402
+from loft import accounts as A, agenttools as AT, attachments as ATT, assistant as AS, board as B, browser as BR, core as C, mobile as M, paths, projects as P, prompts as PR, scope as S, sites as ST, titles as TI, transcript as TR, usage as U, vault as V, webapi  # noqa: E402
 
 CLAUDE = paths.claude_bin()
 CONF_DIR = paths.config_dir()
@@ -893,7 +893,7 @@ def act(cid, action, body):
     if action == "archive":
         return 200, B.act_archive(card)
     if action == "stop":
-        r = subprocess.run([CLAUDE, "stop", cid], capture_output=True, text=True,
+        r = subprocess.run(S.claude("stop", cid), capture_output=True, text=True,
                            env=B.account_env(card), cwd=str(HOME), timeout=60)
         out = (r.stdout + r.stderr).strip().splitlines()
         return 200, out[-1] if out else "Stopped"
@@ -1504,11 +1504,12 @@ class H(BaseHTTPRequestHandler):
         self._ws_accept()
         env = B.account_env(card)
         env.update(TERM="xterm-256color", COLORTERM="truecolor")
+        argv = S.claude("attach", cid)       # built before fork: the probe runs a process
         pid, fd = pty.fork()
         if pid == 0:
             try:
                 os.chdir(str(HOME))
-                os.execvpe(CLAUDE, [CLAUDE, "attach", cid], env)
+                os.execvpe(argv[0], argv, env)
             finally:
                 os._exit(127)
         lock = threading.Lock()
@@ -2170,6 +2171,10 @@ def main():
     print(f"loft on http://127.0.0.1:{port}", flush=True)
     if "--exit-with-stdin" in sys.argv:   # desktop app: exit when the parent goes away
         threading.Thread(target=lambda: (sys.stdin.read(), drop_key(), os._exit(0)), daemon=True).start()
+    # agents, their browsers and emulators run in their own memory-capped scopes (loft/scope.py),
+    # and Loft's own unit gets a cap: a runaway agent test can no longer take Loft down
+    threading.Thread(target=lambda: print(f"memory guard: {S.limit_own_unit() or 'scopes ' + ('on' if S.available() else 'off')}",
+                                          flush=True), daemon=True).start()
     if DEV_LOOPBACK_DEVICES:
         print("DEV: device tokens are accepted on 127.0.0.1 too (--dev-loopback-devices)", flush=True)
     on = load_config().get("phone", False)

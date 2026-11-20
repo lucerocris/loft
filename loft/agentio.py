@@ -6,6 +6,7 @@ import fcntl, os, pty, select, signal, struct, termios, time
 
 from . import board as B
 from . import paths
+from . import scope as S
 
 HOME = paths.HOME
 
@@ -17,10 +18,11 @@ def _attached(card, steps=(), idle=0.8, read_after=0.8):
     Returns the raw bytes the attach printed (for reading a prompt off it)."""
     env = B.account_env(card)
     env.update(TERM="xterm-256color", COLORTERM="truecolor")
+    argv = S.claude("attach", card["id"])      # built before fork: the probe runs a process
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(str(HOME))
-        os.execvpe(paths.claude_bin(), [paths.claude_bin(), "attach", card["id"]], env)
+        os.execvpe(argv[0], argv, env)
     out = bytearray()
     try:
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 160, 0, 0))

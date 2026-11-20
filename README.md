@@ -113,6 +113,19 @@ Install a build from the GitHub release (or build it yourself, below):
 - macOS: open the `.dmg` and drag Loft to Applications. Builds are unsigned for now, so the first
   time right-click Loft and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Loft.app`.
 
+### Memory guard (Linux)
+
+The desktop app runs as a systemd user unit (`app-Loft@….service`). Loft starts every
+`claude` command, agent browser and emulator in its own transient scope (`systemd-run --user
+--scope`), so the Claude daemon, every agent, and every build or test an agent runs stay out
+of Loft's unit. Each scope is capped (`MemoryHigh=70%`, `MemoryMax=80%` of RAM,
+`MemorySwapMax=2G`) with `OOMPolicy=continue`. A runaway agent process is killed inside its
+scope, and Loft and the other agents keep running. Loft's own unit (window, server, voice) is
+capped at 4G. Override with `LOFT_AGENTS_MEMORY_HIGH`, `LOFT_AGENTS_MEMORY_MAX`,
+`LOFT_AGENTS_SWAP_MAX` and `LOFT_MEMORY_MAX` (systemd syntax: `12G`, `75%`, `infinity`), or turn
+it off with `LOFT_SCOPE=0`. The server log prints `memory guard: …` at start. Agents now
+outlive the app: quitting Loft no longer stops them (`claude daemon stop --any` does).
+
 ### Start at login (Linux)
 
 To have Loft (and phone access, if it's on) ready as soon as you log in, add

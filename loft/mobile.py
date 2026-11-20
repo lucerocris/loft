@@ -16,6 +16,7 @@ import base64, json, os, re, shlex, shutil, signal, socket, subprocess, threadin
 from pathlib import Path
 
 from . import paths
+from . import scope as S
 
 MAX_RUNNING = int(os.environ.get("LOFT_MAX_EMULATORS", "2"))
 STREAM_WIDTH = 720
@@ -180,7 +181,7 @@ def _spawn(avd, port, gpu, wipe=False):
     if wipe:
         args.append("-wipe-data")
     with open(log, "ab") as f:
-        proc = subprocess.Popen(args, stdout=f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen(S.wrap(args), stdout=f, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                 start_new_session=True)
     serial = f"emulator-{port}"
     _BOOTING[avd] = {"serial": serial, "proc": proc, "at": time.time(), "log": str(log), "gpu": gpu, "port": port}

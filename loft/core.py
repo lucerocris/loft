@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import accounts as A
 from . import paths
+from . import scope as S
 
 HOME = paths.HOME
 DONE_DAYS = 3
@@ -388,4 +389,5 @@ def attach(j, extra):
     env = A.apply_env(dict(os.environ), acc) if acc else dict(os.environ)
     print(c(DIM, f"attaching {j['id']} ({j['name']}) as {j['account']}"), file=sys.stderr)
     os.chdir(str(HOME))
-    os.execvpe(paths.claude_bin(), [paths.claude_bin(), "attach", j["id"], *extra], env)
+    argv = S.claude("attach", j["id"], *extra)
+    os.execvpe(argv[0], argv, env)

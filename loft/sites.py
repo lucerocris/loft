@@ -20,7 +20,7 @@ import json, os, re, secrets, shutil, signal, sqlite3, subprocess, threading, ti
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import accounts as A, browser as BR, paths
+from . import accounts as A, browser as BR, paths, scope as S
 
 BANK = "shared"
 BANK_LABEL = "Login bank"
@@ -339,7 +339,7 @@ def open_window(acc_id=BANK, url=None):
         _shutdown(rec)
         prof = profile(acc_id)
         _private_dir(prof)
-        p = subprocess.Popen(BR.chrome_args(exe, 0, str(prof), headed=True, url=url), stdin=subprocess.DEVNULL,
+        p = subprocess.Popen(S.wrap(BR.chrome_args(exe, 0, str(prof), headed=True, url=url)), stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         _WINDOWS[str(prof)] = p
         time.sleep(1.5)

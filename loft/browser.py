@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 
 from . import paths
+from . import scope as S
 
 MCP_PACKAGE = "@playwright/mcp@0.0.84"
 # The Playwright plugin opens its own (logged-out) browser window: agents with Loft's browser don't get it.
@@ -219,7 +220,7 @@ def _spawn(port, profile):
     exe = chrome_bin()
     if not exe:
         raise RuntimeError("No Chrome, Chromium, Edge or Brave found (set LOFT_CHROME).")
-    p = subprocess.Popen(chrome_args(exe, port, profile), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    p = subprocess.Popen(S.wrap(chrome_args(exe, port, profile)), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
     for _ in range(100):
         if alive(port):

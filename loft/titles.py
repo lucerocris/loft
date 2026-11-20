@@ -23,6 +23,7 @@ import threading
 
 from . import core as C
 from . import paths
+from . import scope as S
 
 MODEL = "haiku"
 TIMEOUT = 45
@@ -77,9 +78,9 @@ def ask_model(prompt, folder="", account=None, timeout=TIMEOUT):
     except OSError:
         work = paths.HOME
     text = (f"Folder: {folder}\n" if folder else "") + "Task:\n" + prompt[:4000]
-    cmd = [paths.claude_bin(), "-p", "--model", MODEL, "--output-format", "json", "--no-session-persistence",
-           "--safe-mode", "--strict-mcp-config", "--tools", "", "--json-schema", SCHEMA,
-           "--system-prompt", SYSTEM, text]
+    cmd = S.claude("-p", "--model", MODEL, "--output-format", "json", "--no-session-persistence",
+                   "--safe-mode", "--strict-mcp-config", "--tools", "", "--json-schema", SCHEMA,
+                   "--system-prompt", SYSTEM, text)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=str(work),
                            env=B.account_env(account), stdin=subprocess.DEVNULL)
