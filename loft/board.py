@@ -16,6 +16,7 @@ from . import browser as BR
 from . import core as C
 from . import paths
 from . import projects as P
+from . import scope as S
 from . import usage as U
 
 HOME = paths.HOME
@@ -230,7 +231,7 @@ def recent_dirs():
 # ---------------------------------------------------------------- actions
 
 def claude(*args, card=None, timeout=60):
-    return subprocess.run([paths.claude_bin(), *args], capture_output=True, text=True,
+    return subprocess.run(S.claude(*args), capture_output=True, text=True,
                           env=account_env(card), cwd=str(HOME), timeout=timeout)
 
 
@@ -651,7 +652,7 @@ def launch_todo(todo):
         br = None
     extra = ["--mcp-config", BR.mcp_config(br), "--append-system-prompt", BR.AGENT_NOTE] if br else []
     # --mcp-config takes several values: the flags after it end the list before the prompt
-    cmd = [paths.claude_bin(), "--bg", *extra, "--name", todo.get("title") or "agent", todo["prompt"]]
+    cmd = S.claude("--bg", *extra, "--name", todo.get("title") or "agent", todo["prompt"])
     r = subprocess.run(cmd, cwd=cwd, env=account_env(acc), capture_output=True, text=True, timeout=90)
     m = re.search(r"backgrounded\s*·\s*([0-9a-f]{8})", r.stdout + r.stderr)
     if not m:
@@ -693,7 +694,7 @@ def terminal_command(card):
     if not term:
         term = next((t for t in ("konsole", "gnome-terminal", "kitty", "alacritty", "wezterm", "xfce4-terminal", "x-terminal-emulator", "xterm")
                      if shutil.which(t)), "xterm")
-    argv = [paths.claude_bin(), "attach", card["id"]]
+    argv = S.claude("attach", card["id"])
     if term == "konsole":
         return ["konsole", "-p", f"tabtitle={account_label(card)} · {card['name']}", "-e", *argv], env
     if term == "gnome-terminal":
@@ -957,7 +958,7 @@ class Board:
                 save_todos([t for t in load_todos() if t["id"] != todo["id"]])
             self.say(msg)
             return
-        self.shell([paths.claude_bin(), "attach", c["id"]], env=account_env(c), cwd=str(HOME))
+        self.shell(S.claude("attach", c["id"]), env=account_env(c), cwd=str(HOME))
         self.say(f"back from {c['name']}")
 
     def handle(self, ch):
